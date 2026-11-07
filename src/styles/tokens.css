@@ -1,0 +1,131 @@
+/* ============================================================
+   ACADEMIA · DESIGN TOKENS · notebook-skin v2
+   Palette derived from ink, paper, vermillion grading pens,
+   cobalt ballpoint, marigold highlighter and library forest.
+   ============================================================ */
+:root {
+  /* paper + ink neutrals */
+  --background-50:  #fdfaf1;
+  --background-100: #f6efe0;
+  --background-200: #ede3cc;
+  --background-300: #d5c7a8;   /* dot-grid dots */
+  --background-400: #b9a986;
+  --surface:        #fffdf6;   /* card stock */
+  --surface-raised: #fffef9;
+  --overlay:        #fffdf6;
+  --scrim:          rgba(23, 17, 11, 0.52);
+
+  --text-950: #17110b;         /* hard shadow ink */
+  --text-900: #241c14;         /* border + heading ink */
+  --text-700: #473c2e;
+  --text-500: #6b5d49;         /* muted, AA on paper */
+  --text-300: #a4977f;
+  --text-inverse: #fdf8ec;
+
+  /* full-chroma accents */
+  --accent-500: #d92d20;       /* vermillion — warnings, flags */
+  --accent-600: #b42318;
+  --accent-100: #fbe4e0;
+  --cobalt-500: #2742d6;       /* ballpoint blue — primary */
+  --cobalt-600: #1d33ae;
+  --cobalt-100: #e2e7fb;
+  --marigold-500: #eda312;     /* highlighter */
+  --marigold-100: #fbeecb;
+  --marigold-900: #6e4a02;
+  --forest-500: #1f7a4d;       /* success */
+  --forest-100: #ddeee2;
+  --forest-700: #14563a;
+  --plum-500: #b3266e;         /* community / tier E */
+  --plum-100: #f8e0ec;
+
+  /* semantic */
+  --success: var(--forest-500);
+  --warning: var(--marigold-500);
+  --danger:  var(--accent-500);
+  --info:    var(--cobalt-500);
+
+  /* tier scale A–E */
+  --tier-a: #1f7a4d;
+  --tier-b: #2742d6;
+  --tier-c: #b17a08;
+  --tier-d: #c2410c;
+  --tier-e: #b3266e;
+
+  /* chart hues (luminance-separated) */
+  --chart-1: #2742d6;
+  --chart-2: #d92d20;
+  --chart-3: #1f7a4d;
+  --chart-4: #eda312;
+  --chart-5: #b3266e;
+  --chart-6: #0e7490;
+  --chart-7: #7c5cd6;
+
+  /* type */
+  --font-display: "Fraunces", "Georgia", serif;
+  --font-body: "Space Grotesk", "Segoe UI", sans-serif;
+  --font-hand: "Caveat", cursive;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+
+  /* geometry */
+  --ink-border: 2px solid var(--text-900);
+  --shadow-hard: 4px 4px 0px var(--text-950);
+  --shadow-hard-sm: 3px 3px 0px var(--text-950);
+  --shadow-hard-lg: 7px 7px 0px var(--text-950);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --spine-w: 72px;
+  --index-w: 240px;
+  --topbar-h: 60px;
+
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.25, 1.2);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="midnight"] {
+  --background-50:  #221c15;
+  --background-100: #1a1510;
+  --background-200: #241d15;
+  --background-300: #3d3324;
+  --background-400: #57492f;
+  --surface:        #251e16;
+  --surface-raised: #2c241a;
+  --overlay:        #2c241a;
+  --scrim:          rgba(5, 3, 1, 0.66);
+
+  --text-950: #070402;
+  --text-900: #efe5cf;
+  --text-700: #d6c8ab;
+  --text-500: #a89877;
+  --text-300: #6f6248;
+  --text-inverse: #1a1510;
+
+  --accent-500: #ff7a6b;
+  --accent-600: #ff9c90;
+  --accent-100: #43201b;
+  --cobalt-500: #8fa2ff;
+  --cobalt-600: #b0bdff;
+  --cobalt-100: #232a4d;
+  --marigold-500: #ffc14d;
+  --marigold-100: #423214;
+  --marigold-900: #ffd98f;
+  --forest-500: #57c78e;
+  --forest-100: #193427;
+  --forest-700: #8adfb4;
+  --plum-500: #f27ab4;
+  --plum-100: #40202f;
+
+  --tier-a: #57c78e;
+  --tier-b: #8fa2ff;
+  --tier-c: #ffc14d;
+  --tier-d: #ff9357;
+  --tier-e: #f27ab4;
+
+  --chart-1: #8fa2ff;
+  --chart-2: #ff7a6b;
+  --chart-3: #57c78e;
+  --chart-4: #ffc14d;
+  --chart-5: #f27ab4;
+  --chart-6: #4cc9e8;
+  --chart-7: #b39df5;
+}
