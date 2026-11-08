@@ -42,6 +42,19 @@ export function ModalProvider({ children }: { children: ReactNode }) {
             data-modal={m.id}
             role="dialog" aria-modal="true" aria-label={m.title}
             className={`sheet modal-panel w-full ${m.wide ? "max-w-2xl" : "max-w-lg"} flex flex-col`}
+            onKeyDown={e => {
+              // focus trap: Tab / Shift+Tab cycle inside the topmost dialog only
+              if (e.key !== "Tab") return;
+              const root = e.currentTarget as HTMLElement;
+              const focusables = Array.from(root.querySelectorAll<HTMLElement>(
+                'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+              )).filter(el => el.offsetParent !== null || el === document.activeElement);
+              if (focusables.length === 0) { e.preventDefault(); root.focus(); return; }
+              const first = focusables[0], last = focusables[focusables.length - 1];
+              const active = document.activeElement as HTMLElement;
+              if (e.shiftKey && (active === first || !root.contains(active))) { e.preventDefault(); last.focus(); }
+              else if (!e.shiftKey && (active === last || !root.contains(active))) { e.preventDefault(); first.focus(); }
+            }}
           >
             <div className="flex items-center justify-between gap-4 border-b-2 border-dashed px-5 py-4" style={{ borderColor: "var(--background-300)" }}>
               <h2 className="font-display text-lg font-bold">{m.title}</h2>

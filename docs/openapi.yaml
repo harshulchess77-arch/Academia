@@ -1,0 +1,66 @@
+openapi: 3.0.3
+info:
+  title: Academia Backend API (Supabase & PostgREST / Functions)
+  version: 1.0.0
+  description: Server-side RBAC, Quota Management, and Parental Consent endpoints.
+paths:
+  /auth/v1/token:
+    post:
+      summary: User Sign-in via Email/Password
+      responses:
+        '200':
+          description: Returns session and sets httpOnly secure cookie.
+        '401':
+          description: Invalid credentials.
+  /rest/v1/rpc/consume_quota:
+    post:
+      summary: Atomic quota consumption
+      parameters:
+        - name: target_key
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [portfolio, sandbox, chat]
+      responses:
+        '200':
+          description: Returns boolean indicating whether quota was spent.
+  /functions/v1/parental-consent/issue:
+    post:
+      summary: Generate single-use signed parent consent token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                childId:
+                  type: string
+                guardianEmail:
+                  type: string
+                schoolCode:
+                  type: string
+      responses:
+        '200':
+          description: Consent token generated and emailed.
+  /functions/v1/parental-consent/verify:
+    post:
+      summary: Verify parental consent token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                childId:
+                  type: string
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Token verified and bound.
+        '400':
+          description: Invalid, expired, or tampered token.
+

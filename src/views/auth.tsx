@@ -1,8 +1,9 @@
 /* Academia · Phase 1.2 — 50/50 split auth: commercial rotator + tabbed auth engine */
 import { useMemo, useState } from "react";
 import { ArrowLeft, LogIn, NotebookPen, UserPlus } from "lucide-react";
-import { useApp } from "@/engine/store";
+import { useApp, DEMO_MODE } from "@/engine/store";
 import { navigate } from "@/engine/router";
+import { ageOn } from "@/utils/age";
 import { PromoRotator } from "@/components/auth/promo-rotator";
 import { ParentalGate } from "@/components/auth/parental-gate";
 
@@ -20,12 +21,7 @@ export function AuthView() {
 
   const age = useMemo(() => {
     if (!dob.d || !dob.m || !dob.y) return null;
-    const birth = new Date(Number(dob.y), Number(dob.m) - 1, Number(dob.d));
-    if (isNaN(birth.getTime())) return null;
-    const now = new Date();
-    let a = now.getFullYear() - birth.getFullYear();
-    if (now.getMonth() < birth.getMonth() - 1 || (now.getMonth() === birth.getMonth() - 1 && now.getDate() < birth.getDate())) a--;
-    return a;
+    return ageOn({ d: Number(dob.d), m: Number(dob.m), y: Number(dob.y) });
   }, [dob]);
 
   const under18 = age !== null && age < 18;
@@ -81,13 +77,15 @@ export function AuthView() {
                 <input id="si-pass" type="password" className="input" placeholder="••••••••" value={pass} onChange={e => setPass(e.target.value)} required />
               </div>
               <button className="btn btn-primary w-full" type="submit"><LogIn size={16} /> Sign in</button>
-              <div className="divider-dashed pt-4">
-                <p className="mb-2 text-center font-mono text-[10px] uppercase tracking-widest" style={{ color: "var(--text-500)" }}>seeded demo desks</p>
-                <div className="flex gap-3">
-                  <button type="button" className="btn flex-1" onClick={() => signIn("student", "aarav@academia.app")}>Demo student</button>
-                  <button type="button" className="btn btn-ink flex-1" onClick={() => signIn("admin", "registrar@academia.app")}>Demo admin</button>
+              {DEMO_MODE && (
+                <div className="divider-dashed pt-4">
+                  <p className="mb-2 text-center font-mono text-[10px] uppercase tracking-widest" style={{ color: "var(--text-500)" }}>seeded demo desks</p>
+                  <div className="flex gap-3">
+                    <button type="button" className="btn flex-1" onClick={() => signIn("student", "aarav@academia.app")}>Demo student</button>
+                    <button type="button" className="btn btn-ink flex-1" onClick={() => signIn("admin", "registrar@academia.app")}>Demo admin</button>
+                  </div>
                 </div>
-              </div>
+              )}
             </form>
           ) : (
             <form className="mt-6 space-y-4" onSubmit={e => {

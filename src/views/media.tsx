@@ -46,7 +46,10 @@ export function MediaView() {
                     className="absolute inset-0 h-full w-full"
                     src={`https://www.youtube-nocookie.com/embed/${v.id}?autoplay=1&rel=0`}
                     title={v.title}
-                    allow="accelerometer; autoplay; encrypted-media; picture-in-picture"
+                    sandbox="allow-scripts allow-same-origin allow-presentation"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    loading="lazy"
+                    allow="autoplay; encrypted-media; picture-in-picture"
                     allowFullScreen
                   />
                 ) : (

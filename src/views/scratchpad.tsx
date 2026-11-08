@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bold, Download, Eraser, Image as ImageIcon, Italic, List, PenLine, Trash2, Type, Underline } from "lucide-react";
 import { useApp } from "@/engine/store";
+import { sanitizeHtml } from "@/engine/sanitize";
 import { PageHeader, Pill, Tabs } from "@/components/ui";
 
 const W = 1440, H = 960;
@@ -64,7 +65,8 @@ export function ScratchpadView() {
 
   useEffect(() => {
     if (mode === "Typed" && editorRef.current && !editorRef.current.innerHTML) {
-      editorRef.current.innerHTML = localStorage.getItem(SCRATCH_KEY) || "<p><b>Typed notebook.</b> Use this fallback when a stylus isn't around — formatting saves locally as you type.</p><ul><li>Chain rule: outside-in</li><li>KCL: sum of currents = 0</li></ul>";
+      const saved = localStorage.getItem(SCRATCH_KEY);
+      editorRef.current.innerHTML = saved ? sanitizeHtml(saved) : "<p><b>Typed notebook.</b> Use this fallback when a stylus isn't around — formatting saves locally as you type.</p><ul><li>Chain rule: outside-in</li><li>KCL: sum of currents = 0</li></ul>";
     }
   }, [mode]);
 
@@ -239,7 +241,13 @@ export function ScratchpadView() {
             suppressContentEditableWarning
             role="textbox" aria-multiline="true" aria-label="Typed notebook"
             className="prose min-h-[380px] text-[15px] leading-8 outline-none [&_li]:list-disc [&_ul]:pl-6"
-            onInput={() => localStorage.setItem(SCRATCH_KEY, editorRef.current?.innerHTML ?? "")}
+            onInput={() => { const el = editorRef.current; if (el) localStorage.setItem(SCRATCH_KEY, sanitizeHtml(el.innerHTML)); }}
+            onPaste={e => {
+              // paste is plain text only — rich markup never enters the notebook
+              e.preventDefault();
+              const text = e.clipboardData.getData("text/plain");
+              document.execCommand("insertText", false, text);
+            }}
           />
           <p className="mt-4 flex items-center gap-2 font-mono text-[10px]" style={{ color: "var(--text-300)" }}><PenLine size={12} /> stylus mode keeps your ink; this page keeps your words</p>
         </div>

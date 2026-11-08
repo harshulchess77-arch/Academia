@@ -5,6 +5,10 @@
 type Val = number | string | boolean;
 interface St { kind: "let" | "assign" | "log" | "while" | "if"; line: number; name?: string; expr?: string; args?: string[]; cond?: string; body?: St[]; elseBody?: St[] }
 
+const MAX_SRC = 20000;
+const MAX_DEPTH = 40;
+const MAX_STR = 100000;
+
 function splitTop(src: string, sep: string): string[] {
   const out: string[] = [];
   let depth = 0, str = false, cur = "";
@@ -17,53 +21,167 @@ function splitTop(src: string, sep: string): string[] {
   return out.map(s => s.trim()).filter(Boolean);
 }
 
-function parseBlock(lines: string[], start: number, end: number): St[] {
-  const out: St[] = [];
-  let i = start;
-  while (i < end) {
-    const raw = lines[i].trim();
-    const line = i + 1;
-    if (!raw || raw.startsWith("//")) { i++; continue; }
-    if (raw.startsWith("}")) { i++; continue; }
-    const whileM = raw.match(/^while\s*\((.*)\)\s*\{$/);
-    const ifM = raw.match(/^if\s*\((.*)\)\s*\{$/);
-    if (whileM || ifM) {
-      let depth = 1, j = i + 1;
-      while (j < end && depth > 0) {
-        const t = lines[j].trim();
-        const closes = t.startsWith("}"), opens = t.endsWith("{");
-        if (closes && opens) { if (ifM && depth === 1) depth--; } // "} else {" closes the if-body only
-        else if (closes) depth--;
-        else if (opens) depth++;
-        if (depth > 0) j++;
+/* ---------- recursive-descent parser over the source text ---------- */
+/* Statements are line-oriented like before, but blocks are matched by a real
+   cursor so `} else if (…) {` chains and nested blocks parse correctly. */
+
+const isIdStart = (c: string) => /[a-zA-Z_]/.test(c);
+const isIdChar = (c: string) => /[a-zA-Z_0-9]/.test(c);
+
+class ParseError extends Error {}
+
+function parseProgram(src: string): St[] {
+  if (src.length > MAX_SRC) throw new ParseError(`source too large (${src.length} chars, max ${MAX_SRC})`);
+  let pos = 0;
+  const lineAt = (p: number) => src.slice(0, p).split("\n").length;
+  const eof = () => pos >= src.length;
+  const peek = () => src[pos];
+
+  function skipWsComments() {
+    for (;;) {
+      while (pos < src.length && /\s/.test(src[pos])) pos++;
+      if (src.startsWith("//", pos)) {
+        while (pos < src.length && src[pos] !== "\n") pos++;
+        continue;
       }
-      const body = parseBlock(lines, i + 1, j);
-      let elseBody: St[] | undefined;
-      let next = j + 1;
-      if (ifM && lines[j]?.trim() === "} else {") {
-        let d2 = 1, k = j + 1;
-        while (k < end && d2 > 0) {
-          const t = lines[k].trim();
-          const closes = t.startsWith("}"), opens = t.endsWith("{");
-          if (closes && opens) { /* nested else — net zero */ }
-          else if (closes) d2--;
-          else if (opens) d2++;
-          if (d2 > 0) k++;
-        }
-        elseBody = parseBlock(lines, j + 1, k);
-        next = k + 1;
-      }
-      out.push(ifM ? { kind: "if", line, cond: ifM[1], body, elseBody } : { kind: "while", line, cond: whileM![1], body });
-      i = next;
-      continue;
+      return;
     }
-    const logM = raw.match(/^console\.log\s*\((.*)\)\s*;?$/);
-    if (logM) { out.push({ kind: "log", line, args: splitTop(logM[1], ",") }); i++; continue; }
-    const letM = raw.match(/^let\s+([a-zA-Z_]\w*)\s*=\s*(.+?);?$/);
-    if (letM) { out.push({ kind: "let", line, name: letM[1], expr: letM[2].replace(/;$/, "") }); i++; continue; }
-    const asM = raw.match(/^([a-zA-Z_]\w*)\s*=\s*(.+?);?$/);
-    if (asM) { out.push({ kind: "assign", line, name: asM[1], expr: asM[2].replace(/;$/, "") }); i++; continue; }
-    throw new Error(`line ${line}: cannot parse "${raw}"`);
+  }
+  function readWord(): string {
+    const start = pos;
+    while (pos < src.length && isIdChar(src[pos])) pos++;
+    return src.slice(start, pos);
+  }
+  function expectWord(w: string) {
+    skipWsComments();
+    if (!src.startsWith(w, pos) || (isIdChar(src[pos + w.length] ?? " "))) throw new ParseError(`line ${lineAt(pos)}: expected "${w}"`);
+    pos += w.length;
+  }
+  function expectChar(c: string) {
+    skipWsComments();
+    if (src[pos] !== c) throw new ParseError(`line ${lineAt(pos)}: expected "${c}"`);
+    pos++;
+  }
+  /* scan an expression until ; / newline / } / eof at paren-depth 0 (strings aware) */
+  function scanExpr(): string {
+    const start = pos;
+    let depth = 0, str = false;
+    while (pos < src.length) {
+      const c = src[pos];
+      if (str) {
+        if (c === '"') str = false;
+        else if (c === "\n") break; // unterminated string — eval reports it
+        pos++;
+        continue;
+      }
+      if (c === '"') { str = true; pos++; continue; }
+      if (c === "(") depth++;
+      else if (c === ")") { if (depth === 0) break; depth--; }
+      else if (depth === 0 && (c === ";" || c === "\n" || c === "}")) break;
+      pos++;
+    }
+    return src.slice(start, pos).trim();
+  }
+  /* scan a balanced (...) group, returns inner text */
+  function scanParens(): string {
+    expectChar("(");
+    const start = pos;
+    let depth = 1, str = false;
+    while (pos < src.length) {
+      const c = src[pos];
+      if (str) { if (c === '"') str = false; pos++; continue; }
+      if (c === '"') { str = true; pos++; continue; }
+      if (c === "(") depth++;
+      else if (c === ")") { depth--; if (depth === 0) { const inner = src.slice(start, pos); pos++; return inner; } }
+      pos++;
+    }
+    throw new ParseError(`line ${lineAt(start)}: unclosed "("`);
+  }
+  function parseBlockBody(depth: number): St[] {
+    if (depth > MAX_DEPTH) throw new ParseError(`line ${lineAt(pos)}: nesting too deep (max ${MAX_DEPTH})`);
+    expectChar("{");
+    const out: St[] = [];
+    for (;;) {
+      skipWsComments();
+      if (eof()) throw new ParseError(`line ${lineAt(pos)}: unclosed "{" — missing "}"`);
+      if (peek() === "}") { pos++; return out; }
+      out.push(parseStmt(depth + 1));
+    }
+  }
+  /* parse `if (…) {…}` plus any `else {…}` / `else if (…) {…}` chain */
+  function parseIf(depth: number): St {
+    const line = lineAt(pos);
+    expectWord("if");
+    const cond = scanParens();
+    const body = parseBlockBody(depth);
+    skipWsComments();
+    let elseBody: St[] | undefined;
+    if (src.startsWith("else", pos) && !isIdChar(src[pos + 4] ?? " ")) {
+      pos += 4;
+      skipWsComments();
+      if (src.startsWith("if", pos) && !isIdChar(src[pos + 2] ?? " ")) {
+        elseBody = [parseIf(depth)];
+      } else {
+        elseBody = parseBlockBody(depth);
+      }
+    }
+    return { kind: "if", line, cond, body, elseBody };
+  }
+  function parseStmt(depth: number): St {
+    skipWsComments();
+    const line = lineAt(pos);
+    const c = peek();
+    if (c === undefined) throw new ParseError(`line ${line}: unexpected end of input`);
+    if (isIdStart(c)) {
+      const word = readWord();
+      if (word === "let") {
+        skipWsComments();
+        const name = readWord();
+        if (!name) throw new ParseError(`line ${line}: "let" requires a variable name`);
+        expectChar("=");
+        const expr = scanExpr();
+        if (!expr) throw new ParseError(`line ${line}: "let ${name}" needs an expression`);
+        skipWsComments();
+        if (peek() === ";") pos++;
+        return { kind: "let", line, name, expr };
+      }
+      if (word === "while") {
+        const cond = scanParens();
+        const body = parseBlockBody(depth);
+        return { kind: "while", line, cond, body };
+      }
+      if (word === "if") { pos -= 2; return parseIf(depth); }
+      if (word === "console") {
+        skipWsComments();
+        if (!src.startsWith(".log", pos)) throw new ParseError(`line ${line}: expected "console.log"`);
+        pos += 4;
+        const inner = scanParens();
+        skipWsComments();
+        if (peek() === ";") pos++;
+        return { kind: "log", line, args: splitTop(inner, ",") };
+      }
+      // assignment: name = expr
+      skipWsComments();
+      if (peek() !== "=") {
+        // statement ended without ; — recover by skipping to EOL for a better error
+        throw new ParseError(`line ${line}: cannot parse "${word}" — did you mean "${word} = …"?`);
+      }
+      pos++;
+      const expr = scanExpr();
+      if (!expr) throw new ParseError(`line ${line}: "${word}" needs an expression`);
+      skipWsComments();
+      if (peek() === ";") pos++;
+      return { kind: "assign", line, name: word, expr };
+    }
+    throw new ParseError(`line ${line}: cannot parse "${src.slice(pos, src.indexOf("\n", pos) === -1 ? src.length : src.indexOf("\n", pos)).trim() || src[pos]}"`);
+  }
+  skipWsComments();
+  const out: St[] = [];
+  while (!eof()) {
+    skipWsComments();
+    if (eof()) break;
+    if (peek() === "}") throw new ParseError(`line ${lineAt(pos)}: unexpected "}"`);
+    out.push(parseStmt(0));
   }
   return out;
 }
@@ -82,7 +200,12 @@ function evalExpr(src: string, env: Map<string, Val>): Val {
     }
     const two = src.slice(i, i + 2);
     if (["<=", ">=", "==", "!="].includes(two)) { toks.push(two); i += 2; continue; }
-    if (/[0-9.]/.test(c)) { let j = i; while (j < src.length && /[0-9.]/.test(src[j])) j++; toks.push(src.slice(i, j)); i = j; continue; }
+    if (/[0-9.]/.test(c)) {
+      let j = i; while (j < src.length && /[0-9.]/.test(src[j])) j++;
+      const raw = src.slice(i, j);
+      if (!/^(\d+\.?\d*|\.\d+)$/.test(raw)) throw new Error(`bad number "${raw}"`);
+      toks.push(raw); i = j; continue;
+    }
     if (/[a-zA-Z_]/.test(c)) { let j = i; while (j < src.length && /[a-zA-Z_0-9]/.test(src[j])) j++; toks.push(src.slice(i, j)); i = j; continue; }
     if ("+-*/%^()<>,!".includes(c)) { toks.push(c); i++; continue; }
     throw new Error(`bad character "${c}"`);
@@ -142,7 +265,10 @@ function evalExpr(src: string, env: Map<string, Val>): Val {
     const t = toks[p++];
     if (t === undefined) throw new Error("unexpected end of expression");
     if (t === "(") { const v = cmp(); if (toks[p++] !== ")") throw new Error("missing )"); return v; }
-    if (t.startsWith('"')) return t.slice(1, -1);
+    if (t.startsWith('"')) {
+      if (t.length - 2 > MAX_STR) throw new Error(`string literal too long (max ${MAX_STR})`);
+      return t.slice(1, -1);
+    }
     if (/^[0-9.]/.test(t)) return parseFloat(t);
     if (t === "true") return true;
     if (t === "false") return false;
@@ -154,9 +280,8 @@ function evalExpr(src: string, env: Map<string, Val>): Val {
         while (peek() === ",") { p++; args.push(num(cmp())); }
       }
       if (toks[p++] !== ")") throw new Error("missing ) in call");
-      const f = FUNCS[t];
-      if (!f) throw new Error(`unknown function "${t}"`);
-      return f(...args);
+      if (!Object.prototype.hasOwnProperty.call(FUNCS, t)) throw new Error(`unknown function "${t}"`);
+      return FUNCS[t](...args);
     }
     if (env.has(t)) return env.get(t)!;
     if (t === "pi") return Math.PI;
@@ -177,30 +302,34 @@ export function runProgram(code: string): RunResult {
   let steps = 0;
   const MAX = 20000;
   try {
-    const program = parseBlock(code.split("\n"), 0, code.split("\n").length);
+    const program = parseProgram(code);
     const env = new Map<string, Val>();
     const tick = (line: number) => {
       steps++;
       if (steps > MAX) throw new Error(`line ${line}: step budget exhausted (${MAX} ops) — possible infinite loop`);
     };
     const show = (v: Val) => (typeof v === "number" ? String(parseFloat(v.toPrecision(12))) : String(v));
+    const evalAt = (expr: string, env: Map<string, Val>, line: number): Val => {
+      try { return evalExpr(expr, env); }
+      catch (e) { throw new Error(`line ${line}: ${(e as Error).message}`); }
+    };
     const exec = (sts: St[]) => {
       for (const st of sts) {
         tick(st.line);
         if (st.kind === "let" || st.kind === "assign") {
           if (st.kind === "assign" && !env.has(st.name!)) throw new Error(`line ${st.line}: "${st.name}" not declared (use let)`);
-          env.set(st.name!, evalExpr(st.expr!, env));
+          env.set(st.name!, evalAt(st.expr!, env, st.line));
         } else if (st.kind === "log") {
-          lines.push({ text: st.args!.map(a => show(evalExpr(a, env))).join(" "), kind: "out" });
+          lines.push({ text: st.args!.map(a => show(evalAt(a, env, st.line))).join(" "), kind: "out" });
         } else if (st.kind === "while") {
           let guard = 0;
-          while (isTrue(evalExpr(st.cond!, env))) {
+          while (isTrue(evalAt(st.cond!, env, st.line))) {
             tick(st.line);
             exec(st.body!);
             if (++guard > MAX) throw new Error(`line ${st.line}: loop budget exhausted`);
           }
         } else if (st.kind === "if") {
-          if (isTrue(evalExpr(st.cond!, env))) exec(st.body!);
+          if (isTrue(evalAt(st.cond!, env, st.line))) exec(st.body!);
           else if (st.elseBody) exec(st.elseBody);
         }
       }

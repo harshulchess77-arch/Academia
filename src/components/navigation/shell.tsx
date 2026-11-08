@@ -6,7 +6,7 @@ import {
   PenLine, PlaySquare, Shield, Sigma, SquareTerminal, Sun, Target, Timer, Users, UsersRound, Workflow, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
-import { useApp } from "@/engine/store";
+import { useApp, DEMO_MODE } from "@/engine/store";
 import { navigate } from "@/engine/router";
 import { QuotaPills } from "@/components/ui";
 import { AssistantDrawer } from "@/components/chatbot/assistant";
@@ -177,23 +177,25 @@ export function Shell({ path, children }: { path: string; children: ReactNode })
                     <p className="text-xs" style={{ color: "var(--text-500)" }}>{s.session.email}</p>
                     <span className="pill mt-1.5 !text-[10px]" style={{ background: "var(--forest-100)", borderColor: "var(--forest-500)", color: "var(--forest-700)" }}>{s.session.status} · Tier {s.session.tier}</span>
                   </div>
-                  <button role="menuitem" className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--background-200)]"
-                    onClick={() => {
-                      const toAdmin = !isAdmin;
-                      up(d => { d.session.role = toAdmin ? "admin" : "student"; });
-                      setUserMenu(false);
-                      toast(toAdmin ? "Governance mode enabled" : "Returned to student workspace", "info");
-                      navigate(toAdmin ? "/admin/dashboard" : "/dashboard");
-                    }}>
-                    <Shield size={16} /> {isAdmin ? "Student workspace" : "Governance mode"}
-                  </button>
+                  {DEMO_MODE && (
+                    <button role="menuitem" className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--background-200)]"
+                      onClick={() => {
+                        const toAdmin = !isAdmin;
+                        up(d => { d.session.role = toAdmin ? "admin" : "student"; });
+                        setUserMenu(false);
+                        toast(toAdmin ? "Governance mode enabled" : "Returned to student workspace", "info");
+                        navigate(toAdmin ? "/admin/dashboard" : "/dashboard");
+                      }}>
+                      <Shield size={16} /> {isAdmin ? "Student workspace" : "Governance mode"}
+                    </button>
+                  )}
                   <button role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--background-200)] md:hidden"
                     onClick={() => up(d => { d.theme = d.theme === "paper" ? "midnight" : "paper"; })}>
                     {s.theme === "paper" ? <Moon size={16} /> : <Sun size={16} />} {s.theme === "paper" ? "Midnight paper" : "Daylight paper"}
                   </button>
                   <button role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--background-200)]"
                     style={{ color: "var(--accent-600)" }}
-                    onClick={() => { up(d => { d.session.authed = false; }); setUserMenu(false); navigate("/"); }}>
+                    onClick={() => { up(d => { d.session.authed = false; d.session.role = "student"; }); setUserMenu(false); navigate("/"); }}>
                     <LogOut size={16} /> Sign out
                   </button>
                 </div>

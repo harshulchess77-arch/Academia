@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { Eye, FileKey2, KeyRound, Lock, ShieldAlert, Trash2, Upload } from "lucide-react";
 import { useApp, uid, fmtDate, type VaultDoc } from "@/engine/store";
 import { useModal } from "@/engine/modal";
+import { parseLockFile, decryptDocument, encryptDocument, serializeLockFile } from "@/engine/locker-crypto";
 import { PageHeader, Pill, SectionHead } from "@/components/ui";
 
 function scrambleOf(name: string): string {
@@ -33,17 +34,50 @@ export function LockerView() {
   const { open, close } = useModal();
   const fileRef = useRef<HTMLInputElement>(null);
   const [importErr, setImportErr] = useState("");
+  const [passphrase, setPassphrase] = useState("");
   const tamper = s.locker.tamper;
 
-  const doImport = (fileName: string) => {
-    if (!fileName.endsWith(".academia-lock")) { setImportErr(`“${fileName}” is not a .academia-lock container.`); return; }
-    up(d => {
-      d.locker.tamper = false;
-      d.locker.lastImport = Date.now();
-      d.locker.docs = d.locker.docs.map(x => ({ ...x, scrambled: true }));
-    });
-    close();
-    toast("Keypair verified — vault resealed, all documents scrambled", "ok");
+  const verifyAndImportBytes = async (bytes: Uint8Array, fileName: string, pw: string) => {
+    try {
+      const parsed = parseLockFile(bytes);
+      await decryptDocument(parsed, pw);
+      up(d => {
+        d.locker.tamper = false;
+        d.locker.lastImport = Date.now();
+        d.locker.docs = d.locker.docs.map(x => ({ ...x, scrambled: true }));
+      });
+      close();
+      toast("Keypair verified — vault resealed, all documents scrambled", "ok");
+    } catch {
+      up(d => { d.locker.tamper = true; });
+      setImportErr(`Authentication failed for “${fileName}” — tag or passphrase mismatch.`);
+      toast("Authentication failed — TAMPER-LOCK engaged", "err");
+    }
+  };
+
+  const doImport = async (fileOrName: File | string, pw = passphrase) => {
+    const fileName = typeof fileOrName === "string" ? fileOrName : fileOrName.name;
+    if (!fileName.endsWith(".academia-lock")) {
+      setImportErr(`“${fileName}” is not a .academia-lock container.`);
+      return;
+    }
+
+    if (typeof fileOrName === "string") {
+      // Demo mock key: create valid encrypted container on the fly with demo passphrase
+      const demoPw = pw || "academia-demo";
+      const blob = await encryptDocument(new TextEncoder().encode("DEMO_KEY_PAYLOAD"), demoPw);
+      const bytes = serializeLockFile(blob);
+      await verifyAndImportBytes(bytes, fileName, demoPw);
+      return;
+    }
+
+    try {
+      const buffer = await fileOrName.arrayBuffer();
+      await verifyAndImportBytes(new Uint8Array(buffer), fileName, pw || "academia-demo");
+    } catch {
+      up(d => { d.locker.tamper = true; });
+      setImportErr(`Corrupted or unreadable container “${fileName}”.`);
+    }
   };
 
   const reimportModal = () => {
@@ -53,8 +87,16 @@ export function LockerView() {
       body: (
         <div className="space-y-4 text-sm">
           <p style={{ color: "var(--text-700)" }}>Select the key container you exported during provisioning. Verification is local — the file never leaves this device.</p>
+          <input
+            type="password"
+            className="input"
+            placeholder="Vault passphrase (leave empty for demo key)"
+            value={passphrase}
+            onChange={e => setPassphrase(e.target.value)}
+            aria-label="Vault passphrase"
+          />
           <input ref={fileRef} type="file" accept=".academia-lock" className="input" aria-label="Vault key file"
-            onChange={e => { const f = e.target.files?.[0]; if (f) doImport(f.name); }} />
+            onChange={e => { const f = e.target.files?.[0]; if (f) doImport(f); }} />
           {importErr && <p className="font-bold" style={{ color: "var(--accent-600)" }}>{importErr}</p>}
           <div className="divider-dashed pt-3">
             <p className="mb-2 font-mono text-[10px] uppercase tracking-widest" style={{ color: "var(--text-500)" }}>demo keyring</p>

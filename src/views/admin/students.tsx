@@ -58,9 +58,9 @@ export function AdminStudentsView() {
     if (st.id === "st1" && next !== "ACTIVE") navigate(next === "BAN" ? "/banned" : "/inactive");
   };
 
-  const usagePick = (st: StudentRow) => {
-    if (st.status === "ACTIVE") { applyUsage(st, "ACTIVE"); return; }
-    if (st.status === "BAN") {
+  const usagePick = (st: StudentRow, target: AccountStatus) => {
+    if (target === "ACTIVE") { applyUsage(st, "ACTIVE"); return; }
+    if (target === "BAN") {
       open({
         title: `Ban ${st.name}?`,
         body: <p className="text-sm leading-relaxed" style={{ color: "var(--text-700)" }}>This instantly revokes every session, freezes quotas and stamps the account with a red <strong>ACCOUNT_BANNED</strong> lock badge. The student sees the appeal route.</p>,
@@ -208,7 +208,7 @@ export function AdminStudentsView() {
               {(["ACTIVE", "INACTIVE", "BAN"] as AccountStatus[]).map(u => (
                 <button key={u} role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold hover:bg-[var(--background-200)]"
                   style={{ color: u === "BAN" ? "var(--accent-600)" : u === "INACTIVE" ? "var(--marigold-900)" : "var(--forest-700)" }}
-                  onClick={() => usagePick(menuRow)}>
+                  onClick={() => usagePick(menuRow, u)}>
                   {u === "ACTIVE" ? "●" : u === "INACTIVE" ? "◐" : "✕"} {u}{menuRow.status === u ? " · current" : ""}
                 </button>
               ))}

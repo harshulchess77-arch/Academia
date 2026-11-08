@@ -4,6 +4,7 @@ import { AppProvider, useApp } from "@/engine/store";
 import { ModalProvider } from "@/engine/modal";
 import { useRoute, navigate, isExcludedRoute, isAppRoute } from "@/engine/router";
 import { ToastHost } from "@/components/ui";
+import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { Shell } from "@/components/navigation/shell";
 import { LandingView } from "@/views/landing";
 import { AuthView } from "@/views/auth";
@@ -110,7 +111,9 @@ export default function App() {
   return (
     <AppProvider>
       <ModalProvider>
-        <Root />
+        <ErrorBoundary>
+          <Root />
+        </ErrorBoundary>
       </ModalProvider>
     </AppProvider>
   );

@@ -5,7 +5,26 @@ export type Tier = "A" | "B" | "C" | "D" | "E";
 export type Role = "student" | "admin";
 export type AccountStatus = "ACTIVE" | "INACTIVE" | "BAN";
 
-export interface Flashcard { id: string; front: string; back: string; deck: string; ef: number; interval: number; reps: number; due: number; }
+export interface Flashcard {
+  id: string;
+  front: string;
+  back: string;
+  deck: string;
+  ef: number;
+  interval: number;
+  reps: number;
+  due: number;
+  sourceNoteId?: string;
+  clozeIdx?: number;
+  lapses?: number;
+  history?: number[];
+}
+export interface ReviewLogEntry {
+  cardId: string;
+  q: number;
+  ts: number;
+  wasNew: boolean;
+}
 export interface Note { id: string; title: string; subject: string; body: string; updated: number; }
 export interface Opportunity { id: string; title: string; org: string; deadline: number; tier: Tier; kind: string; tracked: boolean; }
 export interface Announcement { id: string; title: string; body: string; priority: "pinned" | "high" | "normal"; tiers: Tier[]; read: boolean; ts: number; author: string; }
@@ -33,7 +52,10 @@ export interface AppState {
   };
   questionnaire: { ack: boolean; answers: Record<string, string>; sandboxEnabled: boolean };
   quotas: { portfolio: { d: number; w: number }; sandbox: { d: number; w: number }; chat: { d: number; w: number } };
+  quotaReset: { daily: string; weekly: string };
   flashcards: Flashcard[];
+  reviewLog?: ReviewLogEntry[];
+  librarySettings?: { dailyNewLimit: number; dailyReviewLimit: number };
   notes: Note[];
   videosWatched: string[];
   resume: { name: string; headline: string; school: string; skills: string[]; activities: string[] };
@@ -61,9 +83,27 @@ export interface AppState {
 
 export const QUOTA_MAX = { portfolio: { d: 3, w: 10 }, sandbox: { d: 1, w: 5 }, chat: { d: 25, w: 150 } };
 const DAY = 86400000;
-export const uid = () => Math.random().toString(36).slice(2, 9);
+export const uid = () =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 const seededRand = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
-export const dayKey = (t: number) => new Date(t).toISOString().slice(0, 10);
+/* local-calendar day key — "today" means the visitor's day, not UTC's */
+export const dayKey = (t: number) => {
+  const d = new Date(t);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+/* local-calendar week key: the Monday of the week containing t */
+export const weekKey = (t: number) => {
+  const d = new Date(t);
+  const dow = (d.getDay() + 6) % 7; // Monday = 0
+  return dayKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow).getTime());
+};
+
+/* demo-only privilege shortcuts (demo admin login, governance toggle, parent token).
+   Default ON so the demo UI is unchanged; set VITE_DEMO_MODE=false for real deployments. */
+export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== "false";
 
 export const DEFAULT_CODE = `// acad-vm · deterministic sandbox program
 let n = 6;
@@ -78,7 +118,7 @@ let x = 2 ^ 10;
 console.log("2^10 =", x);
 console.log("sqrt(144) =", sqrt(144));`;
 
-function seed(): AppState {
+export function seed(): AppState {
   const now = Date.now();
   const sessions: Record<string, number> = {};
   for (let i = 0; i < 140; i++) {
@@ -92,16 +132,19 @@ function seed(): AppState {
     session: { authed: false, role: "student", name: "Aarav Sharma", email: "aarav@academia.app", tier: "A", stage: "ready", status: "ACTIVE" },
     questionnaire: { ack: false, answers: {}, sandboxEnabled: true },
     quotas: { portfolio: { d: 3, w: 10 }, sandbox: { d: 1, w: 5 }, chat: { d: 25, w: 150 } },
+    quotaReset: { daily: dayKey(now), weekly: weekKey(now) },
     flashcards: [
-      { id: "f1", front: "State the Rank–Nullity theorem.", back: "For T: V → W linear, dim(V) = rank(T) + nullity(T). Rank is dim(image), nullity is dim(kernel).", deck: "Linear Algebra", ef: 2.5, interval: 1, reps: 1, due: now - DAY },
-      { id: "f2", front: "Derivative of ln(sin x)?", back: "cot x — chain rule: (1/sin x)·cos x.", deck: "Calculus", ef: 2.5, interval: 0, reps: 0, due: now - 3600e3 },
-      { id: "f3", front: "Time complexity of binary search and its precondition?", back: "O(log n); the input range must be sorted with random access.", deck: "Algorithms", ef: 2.6, interval: 6, reps: 3, due: now },
-      { id: "f4", front: " Kirchhoff's Current Law?", back: "The signed sum of currents at any node is zero — charge is conserved.", deck: "Physics", ef: 2.4, interval: 2, reps: 2, due: now - DAY / 2 },
-      { id: "f5", front: "What does an RREF pivot column tell you?", back: "It marks a basic variable; free columns span the null space.", deck: "Linear Algebra", ef: 2.5, interval: 0, reps: 0, due: now },
-      { id: "f6", front: "Eigenvalue equation?", back: "A·v = λ·v for nonzero v. Solve det(A − λI) = 0.", deck: "Linear Algebra", ef: 2.5, interval: 1, reps: 1, due: now + DAY },
-      { id: "f7", front: "Big-O of heap insert / extract-min?", back: "Both O(log n); build-heap is O(n).", deck: "Algorithms", ef: 2.5, interval: 3, reps: 2, due: now + 2 * DAY },
-      { id: "f8", front: "Integral of sec²x dx?", back: "tan x + C.", deck: "Calculus", ef: 2.7, interval: 6, reps: 3, due: now + 3 * DAY },
+      { id: "f1", front: "State the Rank–Nullity theorem.", back: "For T: V → W linear, dim(V) = rank(T) + nullity(T). Rank is dim(image), nullity is dim(kernel).", deck: "Linear Algebra", ef: 2.5, interval: 1, reps: 1, due: now - DAY, lapses: 0, history: [4] },
+      { id: "f2", front: "Derivative of ln(sin x)?", back: "cot x — chain rule: (1/sin x)·cos x.", deck: "Calculus", ef: 2.5, interval: 0, reps: 0, due: now - 3600e3, lapses: 0, history: [] },
+      { id: "f3", front: "Time complexity of binary search and its precondition?", back: "O(log n); the input range must be sorted with random access.", deck: "Algorithms", ef: 2.6, interval: 6, reps: 3, due: now, lapses: 0, history: [4, 5, 4] },
+      { id: "f4", front: " Kirchhoff's Current Law?", back: "The signed sum of currents at any node is zero — charge is conserved.", deck: "Physics", ef: 2.4, interval: 2, reps: 2, due: now - DAY / 2, lapses: 0, history: [3, 4] },
+      { id: "f5", front: "What does an RREF pivot column tell you?", back: "It marks a basic variable; free columns span the null space.", deck: "Linear Algebra", ef: 2.5, interval: 0, reps: 0, due: now, lapses: 0, history: [] },
+      { id: "f6", front: "Eigenvalue equation?", back: "A·v = λ·v for nonzero v. Solve det(A − λI) = 0.", deck: "Linear Algebra", ef: 2.5, interval: 1, reps: 1, due: now + DAY, lapses: 0, history: [4] },
+      { id: "f7", front: "Big-O of heap insert / extract-min?", back: "Both O(log n); build-heap is O(n).", deck: "Algorithms", ef: 2.5, interval: 3, reps: 2, due: now + 2 * DAY, lapses: 0, history: [4, 4] },
+      { id: "f8", front: "Integral of sec²x dx?", back: "tan x + C.", deck: "Calculus", ef: 2.7, interval: 6, reps: 3, due: now + 3 * DAY, lapses: 0, history: [5, 4, 5] },
     ],
+    reviewLog: [],
+    librarySettings: { dailyNewLimit: 20, dailyReviewLimit: 100 },
     notes: [
       { id: "n1", title: "Row reduction, without tears", subject: "Linear Algebra", body: "RREF recipe: 1) pick leftmost nonzero column, 2) swap a pivot to the top, 3) scale pivot row to 1, 4) clear the column above and below. Pivot columns → basic variables. Free columns → parameters of the null space. Worked example: [[1,2,1],[2,4,3]] → x₁ = −2x₂ − ... keep fractions exact until the end.", updated: now - 2 * DAY },
       { id: "n2", title: "Chain rule pattern bank", subject: "Calculus", body: "Outside-in: d/dx f(g(x)) = f'(g(x))·g'(x). Pattern bank — ln(sin x) → cot x; e^(x²) → 2x·e^(x²); √(1+x²) → x/√(1+x²). When stuck, name the inner function u and rewrite before differentiating.", updated: now - DAY },
@@ -215,13 +258,121 @@ interface AppCtx {
 }
 const Ctx = createContext<AppCtx | null>(null);
 const LS_KEY = "academia-state-v3";
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/* Deep-merge persisted JSON onto the seed shape: every key is type-checked
+   against the seed, prototype-polluting keys are dropped, and anything that
+   fails validation falls back to the seed value instead of crashing render. */
+function mergeValue(seedV: unknown, got: unknown): unknown {
+  if (Array.isArray(seedV)) {
+    if (!Array.isArray(got)) return seedV;
+    const exemplar = seedV[0];
+    const items = got.filter(x =>
+      exemplar === undefined ? x === null || typeof x !== "object" : isPlainObject(x) || typeof x === typeof exemplar);
+    if (exemplar !== undefined && isPlainObject(exemplar)) {
+      return items.map(x => (isPlainObject(x) ? mergeObject(exemplar, x) : x));
+    }
+    return items.slice(0, 5000);
+  }
+  if (isPlainObject(seedV)) {
+    return isPlainObject(got) ? mergeObject(seedV, got) : seedV;
+  }
+  if (typeof seedV === "number") return typeof got === "number" && isFinite(got) ? got : seedV;
+  return typeof got === typeof seedV ? got : seedV;
+}
+
+function mergeObject(seedObj: Record<string, unknown>, got: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(seedObj)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
+    out[key] = key in got ? mergeValue(seedObj[key], got[key]) : seedObj[key];
+  }
+  // optional fields that exist only in persisted data (e.g. session.parental)
+  for (const key of Object.keys(got)) {
+    if (DANGEROUS_KEYS.has(key) || key in out) continue;
+    const v = got[key];
+    if (v === null || typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && isFinite(v))) out[key] = v;
+    else if (isPlainObject(v)) out[key] = mergeObject({}, v);
+    else if (Array.isArray(v)) out[key] = v.filter(x => x === null || typeof x !== "object");
+  }
+  return out;
+}
+
+const TIERS: Tier[] = ["A", "B", "C", "D", "E"];
+const STATUSES: AccountStatus[] = ["ACTIVE", "INACTIVE", "BAN"];
+const STAGES = ["questionnaire", "provisioning", "ready"] as const;
+
+/* enum + range clamping on top of the shape merge */
+function clampState(s: AppState): AppState {
+  s.session.role = s.session.role === "admin" ? "admin" : "student";
+  s.session.status = STATUSES.includes(s.session.status) ? s.session.status : "ACTIVE";
+  s.session.tier = TIERS.includes(s.session.tier) ? s.session.tier : "A";
+  s.session.stage = (STAGES as readonly string[]).includes(s.session.stage) ? s.session.stage : "ready";
+  s.theme = s.theme === "midnight" ? "midnight" : "paper";
+  for (const key of ["portfolio", "sandbox", "chat"] as const) {
+    const max = QUOTA_MAX[key];
+    s.quotas[key].d = Math.min(Math.max(0, Math.round(s.quotas[key].d) || 0), max.d);
+    s.quotas[key].w = Math.min(Math.max(0, Math.round(s.quotas[key].w) || 0), max.w);
+  }
+  // Ensure reviewLog is a capped array (5000 max)
+  if (!Array.isArray(s.reviewLog)) s.reviewLog = [];
+  else if (s.reviewLog.length > 5000) s.reviewLog = s.reviewLog.slice(-5000);
+
+  // Ensure librarySettings exist and are positive
+  if (!s.librarySettings || typeof s.librarySettings !== "object") {
+    s.librarySettings = { dailyNewLimit: 20, dailyReviewLimit: 100 };
+  } else {
+    s.librarySettings.dailyNewLimit = Math.max(1, Math.min(200, Math.round(s.librarySettings.dailyNewLimit) || 20));
+    s.librarySettings.dailyReviewLimit = Math.max(1, Math.min(1000, Math.round(s.librarySettings.dailyReviewLimit) || 100));
+  }
+
+  // Cap per-card history to 50
+  if (Array.isArray(s.flashcards)) {
+    for (const card of s.flashcards) {
+      if (Array.isArray(card.history) && card.history.length > 50) {
+        card.history = card.history.slice(-50);
+      }
+    }
+  }
+
+  return s;
+}
+
+export function sanitizeState(parsed: unknown): AppState | null {
+  if (!isPlainObject(parsed) || parsed.version !== 3) return null;
+  return clampState(mergeObject(seed() as unknown as Record<string, unknown>, parsed) as unknown as AppState);
+}
+
+/* refill daily quotas at local midnight, weekly quotas on local Monday,
+   and heal states persisted before quotaReset existed. */
+export function refillQuotas(s: AppState, now = Date.now()): AppState {
+  const daily = dayKey(now), weekly = weekKey(now);
+  const q = s.quotas;
+  const needD = s.quotaReset?.daily !== daily;
+  const needW = s.quotaReset?.weekly !== weekly;
+  if (!needD && !needW) return s;
+  const quotas = {
+    portfolio: { d: needD ? QUOTA_MAX.portfolio.d : q.portfolio.d, w: needW ? QUOTA_MAX.portfolio.w : q.portfolio.w },
+    sandbox: { d: needD ? QUOTA_MAX.sandbox.d : q.sandbox.d, w: needW ? QUOTA_MAX.sandbox.w : q.sandbox.w },
+    chat: { d: needD ? QUOTA_MAX.chat.d : q.chat.d, w: needW ? QUOTA_MAX.chat.w : q.chat.w },
+  };
+  return { ...s, quotas, quotaReset: { daily, weekly } };
+}
 
 function load(): AppState {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as AppState;
-      if (parsed.version === 3) return { ...seed(), ...parsed };
+      const json: unknown = JSON.parse(raw);
+      const parsed = sanitizeState(json);
+      if (parsed) {
+        // states persisted before quotaReset existed get one refill, then stamp normally
+        const legacy = !isPlainObject(json) || !isPlainObject((json as Record<string, unknown>).quotaReset);
+        return refillQuotas(legacy ? { ...parsed, quotaReset: { daily: "", weekly: "" } } : parsed);
+      }
     }
   } catch { /* corrupted local state falls back to seed */ }
   return seed();
@@ -231,6 +382,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [s, setS] = useState<AppState>(load);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const saveTimer = useRef<number | undefined>(undefined);
+  const sRef = useRef(s);
+  sRef.current = s;
+
+  const persist = (state: AppState) => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* storage full — session-only mode */ }
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = s.theme;
@@ -238,11 +395,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch { /* storage full — session-only mode */ }
-    }, 350);
+    saveTimer.current = window.setTimeout(() => persist(sRef.current), 350);
     return () => window.clearTimeout(saveTimer.current);
   }, [s]);
+
+  /* quota refill: local midnight / Monday rollover, plus tab wake */
+  useEffect(() => {
+    const check = () => setS(prev => refillQuotas(prev));
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    const iv = window.setInterval(check, 30000);
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", check);
+    return () => { window.clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", check); };
+  }, []);
+
+  /* never lose the last <350ms of edits: flush on hide/pagehide */
+  useEffect(() => {
+    const flush = () => persist(sRef.current);
+    const onVis = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVis);
+    return () => { window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+
+  /* adopt state written by another tab instead of silently overwriting it */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== LS_KEY || !e.newValue) return;
+      try {
+        const merged = sanitizeState(JSON.parse(e.newValue));
+        if (merged) setS(prev => (merged.ops >= prev.ops ? merged : prev));
+      } catch { /* ignore malformed cross-tab payloads */ }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const up = (fn: (draft: AppState) => void) => {
     setS(prev => {

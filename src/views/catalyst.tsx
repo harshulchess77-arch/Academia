@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ArrowRight, Filter, GripVertical, MessageSquare, Play, Plus, Trash2, X, Zap } from "lucide-react";
 import { useApp, uid } from "@/engine/store";
+import { hasKeyword } from "@/utils/keywords";
 import { PageHeader, Pill, SectionHead, Toggle } from "@/components/ui";
 import { cn } from "@/utils/cn";
 
@@ -47,8 +48,7 @@ export function CatalystView() {
   };
 
   const runTest = () => {
-    const t = testInput.toLowerCase();
-    const hit = s.rules.find(r => r.enabled && r.keywords.some(k => t.includes(k.toLowerCase())));
+    const hit = s.rules.find(r => r.enabled && hasKeyword(testInput, r.keywords));
     setTestResult(hit ? `RULE ${hit.id} · ${hit.trigger} → ${hit.response}` : "NO_RULE_MATCHED — engine stays silent (nothing is generated).");
   };
 

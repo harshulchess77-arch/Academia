@@ -19,7 +19,7 @@ export function tokenize(src: string): Tok[] {
     if (/[0-9.]/.test(c)) {
       let j = i; while (j < src.length && /[0-9.]/.test(src[j])) j++;
       const raw = src.slice(i, j);
-      if (!isFinite(parseFloat(raw))) throw new Error(`Bad number "${raw}"`);
+      if (!/^(\d+\.?\d*|\.\d+)$/.test(raw)) throw new Error(`Bad number "${raw}"`);
       out.push({ k: "num", v: raw }); i = j; continue;
     }
     if (/[a-zA-Z_]/.test(c)) {
@@ -92,8 +92,8 @@ export function evalAst(ast: Ast, scope: Record<string, number> = {}): number {
   switch (ast.t) {
     case "num": return ast.v;
     case "var": {
-      if (ast.name in scope) return scope[ast.name];
-      if (ast.name in CONSTS) return CONSTS[ast.name];
+      if (Object.prototype.hasOwnProperty.call(scope, ast.name)) return scope[ast.name];
+      if (Object.prototype.hasOwnProperty.call(CONSTS, ast.name)) return CONSTS[ast.name];
       throw new Error(`Unknown symbol "${ast.name}"`);
     }
     case "un": return ast.op === "-" ? -evalAst(ast.a, scope) : evalAst(ast.a, scope);
@@ -106,9 +106,8 @@ export function evalAst(ast: Ast, scope: Record<string, number> = {}): number {
       }
     }
     case "call": {
-      const f = FUNCS[ast.name];
-      if (!f) throw new Error(`Unknown function "${ast.name}"`);
-      return f(...ast.args.map(a => evalAst(a, scope)));
+      if (!Object.prototype.hasOwnProperty.call(FUNCS, ast.name)) throw new Error(`Unknown function "${ast.name}"`);
+      return FUNCS[ast.name](...ast.args.map(a => evalAst(a, scope)));
     }
   }
 }
