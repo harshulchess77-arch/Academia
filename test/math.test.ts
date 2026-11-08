@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parse, evalAst, tokenize, astLines, matMul, matAdd, determinant, rref, solveLinear, fmt } from "@/engine/math";
+import {
+  parse, evalAst, tokenize, astLines, matMul, matAdd, determinant, rref,
+  solveLinear, fmt, toRpn, evalRpn, buildParseTree, findRoots, findIntersections
+} from "@/engine/math";
 
 const ev = (src: string, scope: Record<string, number> = {}) => evalAst(parse(src), scope);
 
@@ -111,3 +114,56 @@ describe("math core: matrices", () => {
     expect(() => solveLinear([[1, 2], [2, 4]], [3, 6])).toThrow(/Singular/);
   });
 });
+
+describe("numera graphing engine: shunting-yard RPN, implicit multiplication & parse tree", () => {
+  it("handles implicit multiplication seamlessly", () => {
+    const rpn1 = toRpn("2x");
+    expect(evalRpn(rpn1, { x: 5 })).toBe(10);
+
+    const rpn2 = toRpn("4sin(pi/2)");
+    expect(evalRpn(rpn2)).toBeCloseTo(4);
+
+    const rpn3 = toRpn("2(3 + 4)");
+    expect(evalRpn(rpn3)).toBe(14);
+
+    const rpn4 = toRpn("(2 + 1)(3 + 1)");
+    expect(evalRpn(rpn4)).toBe(12);
+  });
+
+  it("handles absolute value bars |x|", () => {
+    const rpn = toRpn("|x - 5|");
+    expect(evalRpn(rpn, { x: 2 })).toBe(3);
+    expect(evalRpn(rpn, { x: 8 })).toBe(3);
+  });
+
+  it("evaluates complex RPN expressions with correct operator precedence", () => {
+    const rpn = toRpn("3 + 4 * 2 / (1 - 5) ^ 2");
+    // 3 + 8 / 16 = 3 + 0.5 = 3.5
+    expect(evalRpn(rpn)).toBe(3.5);
+  });
+
+  it("builds structural human-readable parse tree", () => {
+    const tree = buildParseTree("f(x) = 2 * x + 1");
+    expect(tree.id).toBe("root");
+    expect(tree.children.length).toBeGreaterThan(0);
+    const firstChild = tree.children[0];
+    expect(firstChild.explanation).toBeDefined();
+  });
+
+  it("locates roots via bisection solver", () => {
+    // f(x) = x^2 - 4 has roots at -2 and 2
+    const roots = findRoots(x => x * x - 4, -4, 4, 100);
+    expect(roots.length).toBe(2);
+    expect(roots[0]).toBeCloseTo(-2, 2);
+    expect(roots[1]).toBeCloseTo(2, 2);
+  });
+
+  it("locates intersections between two curves", () => {
+    // f(x) = x, g(x) = x^2 has intersections at (0, 0) and (1, 1)
+    const crossings = findIntersections(x => x, x => x * x, -0.5, 1.5, 100);
+    expect(crossings.length).toBe(2);
+    expect(crossings[0].x).toBeCloseTo(0, 1);
+    expect(crossings[1].x).toBeCloseTo(1, 1);
+  });
+});
+

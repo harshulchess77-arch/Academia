@@ -1,0 +1,76 @@
+# Academia — Full Technical Specification
+
+> Complete architectural reference, mathematical definitions, security wire formats, and deterministic constraints for the Academia platform.
+
+---
+
+## 1. Architectural Tenets & Standards
+1. **Deterministic Execution**: All transitions, schedules, calculations, and diagnostic bands are 100% reproducible. No probabilistic LLMs or non-deterministic heuristics touch core application state.
+2. **Absolute Privacy Sovereignty**: Zero external analytics, zero tracking cookies, zero external telemetry scripts. Strict compliance with COPPA, GDPR-K, and India's Digital Personal Data Protection (DPDP) Act 2023.
+3. **Local-First & Offline Resilience**: Fully functional without network connectivity. State is persisted in localStorage under key `academia-state-v3` with defensive shape sanitization and prototype-pollution elimination.
+
+---
+
+## 2. Active-Recall Engine (SuperMemo SM-2)
+- **Ease Factor Floor**: $EF \ge 1.3$.
+- **Formula**:
+  - For rating $q \in \{0, 1, 2, 3, 4, 5\}$:
+    - If $q < 3$: $reps = 0$, $interval = 1$ day, $EF$ unchanged.
+    - If $q \ge 3$:
+      - $reps = reps + 1$
+      - $interval = 1$ if $reps = 1$; $interval = 6$ if $reps = 2$; otherwise $interval = \text{round}(interval \times EF)$
+      - $EF = \max(1.3, EF + (0.1 - (5 - q) \times (0.08 + (5 - q) \times 0.02)))$
+- **Cloze Deletions**: Pattern `{{c[0-9]+::answer(?:::hint)?}}` produces sub-cards `<parentId>#c<index>`.
+- **Leech Detection**: Any flashcard with `lapses >= 4` is flagged with rule `LEECH/LAPSE_GTE_4`.
+- **CSV & JSON Safety**: Formula injection prevention prepends `'` to leading `=`, `+`, `-`, `@`. Imports strictly enforce a 2MB size cap and 5,000 card ceiling.
+
+---
+
+## 3. Sealed Document Locker (`.academia-lock`)
+- **Cipher Suite**: AES-256-GCM via browser `crypto.subtle`.
+- **Key Derivation**: PBKDF2-SHA-256 with 600,000 iterations and 128-bit cryptographically secure salt.
+- **Wire Format Binary Layout**:
+  - Bytes 0..7: Magic ASCII header `ACA-LOCK`
+  - Byte 8: Version `0x01`
+  - Bytes 9..12: Big-endian unsigned 32-bit iteration count ($600,000 = \text{0x000927C0}$)
+  - Bytes 13..28: 16-byte (128-bit) salt
+  - Bytes 29..40: 12-byte (96-bit) initialization vector (IV)
+  - Bytes 41..end: AES-256-GCM ciphertext + 16-byte (128-bit) authentication tag.
+- Passphrases and derived keys reside exclusively in transient heap memory.
+
+---
+
+## 4. Hardened Community Charter Filter
+Multi-stage text normalization pipeline preventing evasion:
+1. Unicode NFKC normalization.
+2. Cyrillic and Greek homoglyph mapping to Latin ASCII.
+3. Zero-width character stripping (`\u200B`, `\u200C`, `\u200D`, `\uFEFF`, soft hyphens).
+4. Leet-speak digit and symbol resolution (`@` -> `a`, `$` -> `s`, `0` -> `o`, `1` -> `i`, `3` -> `e`, `5` -> `s`, `7` -> `t`, `8` -> `b`).
+5. Letter-spacing collapse (e.g. `s t u p i d` -> `stupid`).
+6. Intra-word vowel collapse.
+7. Moderation against curated bilingual English and Hinglish rule tables with Scunthorpe allowlisting.
+
+---
+
+## 5. Bounded Virtual Machine (`acad-vm`)
+- Executes student code ASTs inside an isolated environment without access to `eval()`, `Function()`, `window`, `document`, or DOM.
+- Implements strict maximum step budget ($50,000$ operations) to prevent denial of service from infinite loops.
+
+---
+
+## 6. Endpoints & Sitemap Reference
+- Landing: `https://academia.app/`
+- Authentication & DPDP: `https://academia.app/auth`
+- Health & Zero-Knowledge: `https://academia.app/status`
+- Active-Recall Library: `https://academia.app/library`
+- Numera Math Engine: `https://academia.app/numera`
+- Sandbox Interpreter: `https://academia.app/sandbox`
+- Document Locker: `https://academia.app/locker`
+- Opportunity Inventory: `https://academia.app/inventory`
+- Tally GPA Engine: `https://academia.app/tally`
+- Focus Pomodoro: `https://academia.app/pomodoro`
+- Diagnostic Adoro: `https://academia.app/adoro`
+- Catalyst Engine: `https://academia.app/catalyst`
+- Admissions Portfolio: `https://academia.app/portfolio`
+- Context Discovery: `https://academia.app/llms.txt`
+

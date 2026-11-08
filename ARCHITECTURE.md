@@ -1,157 +1,185 @@
-# Academia Architecture Specification
+# Academia Architectural Manifesto
 
-This document details the architectural principles, data flows, state invariants, cryptographic specifications, security boundaries, and backend integration design for **Academia**.
-
----
-
-## 1. Architectural Philosophy
-
-Academia operates under strict, non-negotiable architectural tenets:
-1. **Deterministic Execution**: No generative models or probabilistic classifiers touch core logic. State transitions, recommendations, and schedules are 100% reproducible and inspectable.
-2. **Local-First with Zero Mandatory Egress**: The application functions completely offline in `DEMO_MODE` using local storage with deep shape validation and sanitization.
-3. **Defense in Depth**: Client-side route guards, keystroke filtering, and sanitizers are strictly advisory; all security policies, quotas, and role privileges are formally backed by server-side verification and PostgreSQL Row Level Security (RLS).
-4. **Child Safety by Design**: Compliant with COPPA, GDPR-K, and India's DPDP Act 2023. Explicit parental consent validation, zero third-party behavioral profiling, and strict data minimization.
+> **Comprehensive Technical Architecture, Invariants, State Topology, and Cryptographic Specifications for Academia.**
 
 ---
 
-## 2. System Architecture Diagram
+## 1. Architectural Philosophy & Invariants
+
+Academia is built upon uncompromising deterministic engineering principles:
+
+1. **Deterministic Execution**: No probabilistic large language models or black-box generative classifiers touch core state transitions or student evaluation logic. Every schedule, recommendation, AST evaluation, and diagnostic calculation traces to an explicit, human-readable rule or mathematical formula.
+2. **Absolute Privacy Sovereignty**: Zero third-party trackers, zero advertising scripts, and full adherence to COPPA, GDPR-K, and India's Digital Personal Data Protection (DPDP) Act 2023. Telemetry egress is architecturally forbidden by construction.
+3. **Local-First & Offline Capable**: Zero mandatory network egress. The system defaults to an offline-capable, version-clamped reactive local store (`academia-state-v3`), backed by high-assurance Web Cryptography.
+4. **Off-Thread Vectorized Computing**: All computationally intensive graphing, mathematical evaluation, and cryptographic operations are executed in dedicated Web Workers utilizing zero-copy Transferable Typed Arrays, guaranteeing an uninterrupted 60 FPS main UI thread.
+5. **Defense in Depth**: Client-side route guards, keystroke filtering, and sanitizers are strictly advisory; all security policies, quotas, and role privileges are formally backed by PostgreSQL Row Level Security (RLS) and serializable stored procedures.
+
+---
+
+## 2. System Architecture & Component Interaction Topology
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                          User Browser / Client                         │
-│                                                                        │
-│   ┌───────────────────┐    ┌────────────────────┐    ┌─────────────┐   │
-│   │   Hash Router     │───▶│   View Layer       │───▶│ UI Tokens   │   │
-│   │  (Route Guards)   │    │  (Library, Locker) │    │ & Skin (CSS)│   │
-│   └───────────────────┘    └────────────────────┘    └─────────────┘   │
-│             │                        │                                 │
-│             ▼                        ▼                                 │
-│   ┌─────────────────────────────────────────────┐                      │
-│   │            App Store (Version 3)            │                      │
-│   │   useApp() · Immutable up() · Toasts Host   │                      │
-│   └─────────────────────────────────────────────┘                      │
-│             │                        │                                 │
-│             ▼                        ▼                                 │
-│   ┌───────────────────┐    ┌────────────────────┐                      │
-│   │ Engine & Pure     │    │ WebCrypto Engine   │                      │
-│   │ Rules / Interpreters   │ (AES-256-GCM / PBKDF2)                    │
-│   └───────────────────┘    └────────────────────┘                      │
-│             │                                                          │
-│             ▼                                                          │
-│   ┌─────────────────────────────────────────────┐                      │
-│   │ Local Storage Layer (Version 3 Clamped)     │                      │
-│   └─────────────────────────────────────────────┘                      │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ HTTPS (Cookie Auth / JSON API)
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Supabase Backend Service                        │
-│                                                                        │
-│   ┌───────────────────┐    ┌────────────────────┐    ┌─────────────┐   │
-│   │ GoTrue Auth       │    │ PostgREST API      │    │ Functions   │   │
-│   │ (Secure Cookies)  │    │ (RLS Enforced)     │    │ (Consent)   │   │
-│   └───────────────────┘    └────────────────────┘    └─────────────┘   │
-│                                      │                                 │
-│                                      ▼                                 │
-│   ┌────────────────────────────────────────────────────────────────┐   │
-│   │                      PostgreSQL Database                       │   │
-│   │   profiles · quotas · parental_consents · admin_warnings       │   │
-│   │   Stored Procedures: consume_quota(key) [Atomic Rollover]      │   │
-│   └────────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 User Browser / Client                                  │
+│                                                                                        │
+│   ┌─────────────────────┐       ┌──────────────────────┐      ┌────────────────────┐   │
+│   │     Hash Router     │──────▶│   View Layer (Lazy)  │─────▶│  Tailwind CSS v4   │   │
+│   │   (Security Guards) │       │   (Library, Numera)  │      │   Notebook-Skin    │   │
+│   └─────────────────────┘       └──────────────────────┘      └────────────────────┘   │
+│              │                             │                                           │
+│              ▼                             ▼                                           │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │                         App Store (Version 3 Clamped)                          │   │
+│   │          useApp() · Immutable up() · Quota Lifecycles · Toast Host             │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+│              │                             │                            │              │
+│              ▼                             ▼                            ▼              │
+│   ┌─────────────────────┐       ┌──────────────────────┐      ┌────────────────────┐   │
+│   │  AST Virtual Machine│       │ Numera Math Worker   │      │ Locker Crypto      │   │
+│   │  (acad-vm Engine)   │       │ (2,000 Pts / Float64)│      │ Worker (AES-GCM)   │   │
+│   └─────────────────────┘       └──────────────────────┘      └────────────────────┘   │
+│              │                             │                            │              │
+│              ▼                             ▼                            ▼              │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │                   Local Storage Engine (academia-state-v3)                     │   │
+│   │            Deep Merge Validation · Prototype Pollution Shield                  │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ HTTPS / WSS (Cookie Auth / JSON API)
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               Supabase Production BaaS                                 │
+│                                                                                        │
+│   ┌─────────────────────┐       ┌──────────────────────┐      ┌────────────────────┐   │
+│   │ GoTrue Auth         │       │ PostgREST API        │      │ RPC Functions      │   │
+│   │ (Secure Cookies)    │       │ (RLS Enforced)       │      │ (consume_quota)    │   │
+│   └─────────────────────┘       └──────────────────────┘      └────────────────────┘   │
+│                                            │                                           │
+│                                            ▼                                           │
+│   ┌────────────────────────────────────────────────────────────────────────────────┐   │
+│   │                              PostgreSQL Database                               │   │
+│   │    profiles · quotas · parental_consents · admin_warnings (Serializable RLS)   │   │
+│   └────────────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. Core Engine Components
+## 3. Local-First Reactive State Engine (`src/engine/store.tsx`)
 
-### 3.1. Local Reactive Store (`src/engine/store.tsx`)
-- **Versioned State**: Schema is pinned to Version 3 (`academia-state-v3`).
-- **Resilience Against Corruption**:
-  - `mergeObject()` performs deep structural merging against a canonical seed.
-  - Rejects prototype pollution payloads (`__proto__`, `constructor`, `prototype`).
-  - Clamps numerical ranges, enums (`Role`, `AccountStatus`, `Tier`), and sanitizes array lengths to prevent memory exhaustion attacks.
-- **Quota Lifecycles**:
-  - Enforces daily limits (`portfolio: 3`, `sandbox: 1`, `chat: 25`) and weekly limits (`portfolio: 10`, `sandbox: 5`, `chat: 150`).
-  - Rollover logic uses `dayKey(t)` and `weekKey(t)` calculated against the user's **local calendar timezone** (not UTC), resetting daily counts at local midnight and weekly counts on local Mondays.
+### 3.1. Schema Invariants & Migration Resilience
+- **Version Clamping**: Application state is bound to Version 3 (`academia-state-v3`).
+- **Deep Structural Merging**: `mergeObject()` executes recursive field validation against a canonical seed state. Any unauthorized, extraneous, or malformed keys are discarded.
+- **Prototype Pollution Immunity**: Active rejection of `__proto__`, `constructor`, and `prototype` keys across all input streams.
+- **Strict Bounds Clamping**:
+  - Enums (`Role`, `AccountStatus`, `CourseWeightTier`, `Theme`) are strictly validated against allowlists.
+  - Numbers are clamped to safe ranges (e.g., Ease Factor $\ge 1.3$, quota limits $\ge 0$).
+  - Collections (e.g., `cards`, `notes`, `reviewLog`) enforce capacity ceilings to prevent client memory exhaustion.
 
-### 3.2. Locker WebCrypto Engine (`src/engine/locker-crypto.ts`)
-- **Cipher Suite**: AES-256-GCM (Galois/Counter Mode) via browser `crypto.subtle`.
-- **Key Derivation (KDF)**: PBKDF2-SHA-256 using 600,000 iterations and a 128-bit cryptographically secure random salt.
-- **Nonce/IV**: 96-bit random IV generated per document via `crypto.getRandomValues()`. Never reused across encryptions.
-- **Wire Format (`.academia-lock`)**:
-  ```
-  00-07: Magic ASCII string "ACA-LOCK" (8 bytes)
-  08   : Format Version (0x01)
-  09-12: Big-endian Uint32 PBKDF2 Iteration Count
-  13-28: Salt (16 bytes / 128 bits)
-  29-40: Nonce / IV (12 bytes / 96 bits)
-  41-..: Ciphertext + 128-bit GCM Authentication Tag
-  ```
-- **In-Memory Guarantee**: Passphrases and derived keys live exclusively in component/heap memory. Never persisted to `localStorage` or session tokens.
+### 3.2. Local Calendar Quota Lifecycle
+- Quotas (e.g., daily reviews, sandbox runs, portfolio items) are calculated against the student's **local calendar timezone** using `dayKey(t)` and `weekKey(t)`.
+- Daily limits reset at local midnight; weekly limits reset on local Monday mornings, ensuring fair scheduling irrespective of geographical coordinate offsets.
 
-### 3.3. Hardened Community Charter Filter (`src/engine/charter-filter.ts`)
-Multi-stage normalization pipeline to prevent evasion:
-1. **Unicode NFKC Normalization**: Eliminates fullwidth fonts and compatibility ligatures.
-2. **Confusable Resolution**: Maps lookalike Greek and Cyrillic glyphs (e.g. Cyrillic `і` → `i`).
-3. **Zero-Width Stripping**: Removes zero-width spaces (`\u200b`), soft hyphens, and invisible joiners.
-4. **Leet-Speak Substitution**: Translates numeric and symbolic leet encodings (`1`→`i`, `3`→`e`, `0`→`o`, `@`→`a`, `$`→`s`, `5`→`s`, `7`→`t`).
-5. **Masking & Spacing Collapse**:
-   - Letter-spacing evasion (e.g. `s t u p i d` → `stupid`).
-   - Intra-word vowel censors (e.g. `st*pid` matches through term regex expansion).
-   - Collapse 3+ consecutive duplicate characters down to 2.
-6. **False-Positive Suppression**: Scunthorpe patterns allow legitimate vocabulary (e.g. `dumbbell`, `Moran's I test`, `assess`).
-7. **Bilingual Vocabulary**: Isolated dictionary in `charter-filter-words.ts` supporting English and romanized Hindi/Hinglish terms.
-
-### 3.4. SuperMemo SM-2 & Cloze Engine (`src/engine/cloze.ts` & `src/engine/library-analytics.ts`)
-- **Canonical Algorithm**:
-  $$\text{Interval}(1) = 1, \quad \text{Interval}(2) = 6, \quad \text{Interval}(n) = \text{Interval}(n-1) \times \text{EF}$$
-  $$\text{EF}' = \max\left(1.3, \, \text{EF} + \left(0.1 - (5 - q) \times (0.08 + (5 - q) \times 0.02)\right)\right)$$
-  - Lapses ($q < 3$) reset reps to 0 and interval to 1 day while leaving EF strictly unchanged.
-- **Review Log Ring Buffer**: `reviewLog` stores up to 5,000 entries of `{ cardId, q, ts, wasNew }` for daily limit enforcement and retention rate calculation.
-- **Cloze Hierarchy**: Cloze templates generate virtual cards under the `<parentId>#c<index>` namespace, cascading deletions and retaining scheduling state when re-editing.
+### 3.3. Credit-Weighted GPA Matrix & Milestone Forecaster
+- **Weighted Course Tiers**:
+  $$\text{Standard} = +0.0, \quad \text{Honors} = +0.5, \quad \text{AP} = +1.0, \quad \text{Dual Enrollment} = +1.0$$
+- **Canonical Weighted GPA Calculation**:
+  $$\text{Weighted GPA} = \frac{\sum_{i=1}^{n} \left(\text{BaseGradePts}_i + \text{TierWeight}_i\right) \times \text{Credits}_i}{\sum_{i=1}^{n} \text{Credits}_i}$$
+- **Milestone Forecaster**: Deterministic point gap analysis (`forecastMilestones`) calculates the exact target scores required across remaining assignments to hit target grade thresholds.
 
 ---
 
-## 4. Backend & Security Architecture
+## 4. Off-Thread Vectorized Computing Pipelines
 
-### 4.1. Supabase PostgreSQL Schema
-All administrative operations, role enforcement, and parental consents are executed within PostgreSQL with Row Level Security enabled:
-- **`public.profiles`**: Contains system roles (`student`, `admin`) and statuses (`ACTIVE`, `INACTIVE`, `BAN`). RLS policies prevent users from upgrading their own privileges.
-- **`public.quotas`**: Handled via PostgreSQL stored function `consume_quota(target_key)` inside serializable transactions to prevent race conditions or request replay attacks.
-- **`public.parental_consents`**: Verifiable audit records with child account binding, expiration timestamps, and policy versions.
+### 4.1. Numera Graphing Worker (`src/engine/numera-worker.ts`)
+- **Off-Thread Sampling**: When any formula, slider variable, or coordinate table shifts, the Reverse Polish Notation (RPN) token stream is passed to a background Web Worker.
+- **Vectorized Typed Arrays**: The worker calculates exactly 2,000 sampling points across the active viewport bounds ($[X_{\min}, X_{\max}]$) directly into a `Float64Array(4000)`.
+- **Zero-Copy Streaming**: Pixel coordinate buffers are streamed to the main thread via Transferable Objects (`points.buffer`), maintaining a locked 60 FPS viewport rendering state without UI frame drops.
+- **Mathematical Invariants**:
+  - Shunting-Yard parser (`toRpn`) enforces standard algebraic operator precedence: `^` (right-associative) $>$ `*`, `/`, `%` $>$ `+`, `-`.
+  - Automatic implicit multiplication expansion (`2x` $\to$ `2 * x`, `4sin(x)` $\to$ `4 * sin(x)`, `2(x+1)` $\to$ `2 * (x+1)`).
+  - Absolute value bars normalization (`|x|` $\to$ `abs(x)`).
+  - Numerical bisection solvers for zero-crossings (`findRoots`) and curve intersections (`findIntersections`).
 
-### 4.2. Security Headers & Deployment
-Configured via `vercel.json`:
-- `Content-Security-Policy`: Disallows unauthorized external script domains; restricts frames to youtube-nocookie; restricts connections to origin.
-- `X-Frame-Options: DENY` & `frame-ancestors 'none'`: Mitigates clickjacking.
-- `Strict-Transport-Security`: Enforces 2-year HSTS with subdomains and preload.
-- `Permissions-Policy`: Disables camera, microphone, and geolocation.
-- `X-Content-Type-Options: nosniff`: Prevents MIME-sniffing exploits.
+### 4.2. Locker WebCrypto Worker (`src/engine/locker-worker.ts`)
+- Offloads PBKDF2 key derivation and AES-256-GCM symmetric encryption/decryption routines from the main thread.
+- Guarantees that intense cryptographic key stretching (600,000 iterations) never blocks user interactions, scroll events, or animations.
 
 ---
 
-## 5. Data Flow & Authentication Lifecycle
+## 5. Sealed Document Locker (`src/engine/locker-crypto.ts`)
 
+### 5.1. Cryptographic Suite
+- **Symmetric Cipher**: AES-256-GCM (Galois/Counter Mode) via browser `crypto.subtle`.
+- **Key Derivation (KDF)**: PBKDF2-SHA-256 using 600,000 iterations and a 128-bit cryptographically secure salt (`crypto.getRandomValues`).
+- **Initialization Vector (IV)**: Unique 96-bit random IV generated per encryption. IV reuse is cryptographically impossible.
+
+### 5.2. Binary Wire Container (`.academia-lock`)
 ```
-[User Registration (Under 18)]
-              │
-              ▼
-    [ParentalGate Component]
-              │
-              ├──▶ Server generates single-use signed token (48h expiry)
-              ├──▶ Guardian receives email verification
-              └──▶ Guardian submits token; Server validates childId binding
-                        │
-                        ▼
-            [Profile Activated as Student]
-                        │
-       ┌────────────────┴────────────────┐
-       ▼                                 ▼
-[Student Session]                 [Admin Session]
-   - Advisory Route Guard            - Full Route Access
-   - Client Cache in LocalStore      - Ban / Unban Students
-   - Local Quota Checks              - Quota Overrides
-   - Server RPC Quota Deduction      - Audit Trail Review
+00-07: Magic ASCII identifier "ACA-LOCK" (8 bytes)
+08   : Format Version byte (0x01)
+09-12: Big-endian Uint32 PBKDF2 iteration count (e.g. 600,000)
+13-28: Salt (16 bytes / 128 bits)
+29-40: Nonce / IV (12 bytes / 96 bits)
+41-..: Ciphertext + 128-bit GCM Authentication Tag
 ```
 
+### 5.3. Schema Checksum Sentinel & Tamper Detection
+- Document schemas compute a SHA-256 checksum over normalized structural keys (`computeSchemaChecksum`).
+- Decryption validates the payload schema (`validateContainerSchema`). Any payload corruption, missing properties, or invalid checksum triggers an immediate `TamperError`.
+- **In-Memory Guarantee**: Passphrases and derived keys live exclusively in transient heap memory; never persisted to `localStorage` or disk caches.
+
+---
+
+## 6. Deterministic AST Interpreter (`src/engine/interpreter.ts`)
+
+### 6.1. Runtime Execution (`acad-vm`)
+- Executes custom student algorithms in an isolated, pure-function virtual machine environment without relying on browser `eval()` or `new Function()`.
+- Implements strict step budgets (default 10,000 instructions) and memory caps to prevent browser thread locking.
+
+### 6.2. Real-Time Pre-Compilation Static Analysis (`analyzeCode`)
+- Evaluates code on-the-fly as students type before runtime execution.
+- Flags unconditional infinite loops (e.g., `while(true)`), unmutated loop condition variables, unclosed blocks, and instruction budget estimates directly at the source code row level.
+- Automated rolling snapshot manager retains up to 10 rolling states in transient session storage.
+
+---
+
+## 7. Hardened Community Charter Filter (`src/engine/charter-filter.ts`)
+
+A 7-stage normalization and anti-evasion pipeline:
+1. **Unicode NFKC Normalization**: Strips font styling hacks and normalizes Unicode ligatures.
+2. **Confusable Resolution**: Translates homoglyphs across Greek and Cyrillic character sets (e.g., Cyrillic `і` $\to$ Latin `i`).
+3. **Zero-Width Stripping**: Eliminates zero-width spaces (`\u200b`), soft hyphens, and word joiners.
+4. **Leet-Speak Substitution**: Translates numbers and symbols (`1`$\to$`i`, `0`$\to$`o`, `3`$\to$`e`, `@`$\to$`a`, `$`$\to$`s`, `5`$\to$`s`, `7`$\to$`t`).
+5. **Masking & Spacing Collapse**: Collapses letter-spaced words (`s t u p i d` $\to$ `stupid`), intra-word vowel censors (`st*pid`), and duplicate letter runs (3+ reduced to 2).
+6. **False-Positive Allowlisting**: Scunthorpe pattern rules preserve academic vocabulary (`dumbbell`, `assess`, `Moran's I test`).
+7. **Bilingual Vocabulary**: Isolated dictionary in `charter-filter-words.ts` covering English and romanized Hindi/Hinglish idioms.
+
+---
+
+## 8. App-Wide Performance & Virtualization Architecture
+
+### 8.1. Route-Level Code Splitting
+- All top-level views (`Library`, `Locker`, `Numera`, `Sandbox`, `Admin`, `Inventory`, etc.) are partitioned using `React.lazy()` with `<Suspense>` boundaries.
+- Module chunks are loaded strictly on demand, minimizing the active memory footprint.
+
+### 8.2. Tailored Skeleton Loading Shells
+- Structural skeleton shells (`LibrarySkeleton`, `NumeraSkeleton`, `LockerSkeleton`, `TableSkeleton`, `ViewSkeleton`) eliminate layout shifts.
+- Tailwind CSS v4 pulse animations matching `#0B3D91` navy and ivory/paper palettes ensure smooth perceived transitions.
+
+### 8.3. DOM Virtualization & Strict Memoization
+- Active-Recall `VirtualCardScroller` in `src/views/library.tsx` strictly limits active DOM nodes to $\le 30$ elements at all times, effortlessly scaling to decks with thousands of cards.
+- Interactive rows are wrapped in strict `React.memo` gates with custom comparison predicates (`areVirtualCardPropsEqual`).
+
+---
+
+## 9. Security Headers & Deployment Architecture (`vercel.json`)
+
+Deployment is hardened for high-assurance public hosting on Vercel:
+- **Content-Security-Policy (CSP)**:
+  `default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; worker-src 'self' blob:; upgrade-insecure-requests`
+- **X-Frame-Options**: `DENY` (eliminating clickjacking).
+- **X-Content-Type-Options**: `nosniff` (blocking MIME sniffing).
+- **Strict-Transport-Security (HSTS)**: `max-age=63072000; includeSubDomains; preload` (2-year enforced HTTPS).
+- **Referrer-Policy**: `strict-origin-when-cross-origin`.
+- **Permissions-Policy**: `geolocation=(), camera=(), microphone=(), magnetometer=()` (hardware surveillance lockout).

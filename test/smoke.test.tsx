@@ -38,18 +38,25 @@ const LS_KEY = "academia-state-v3";
 let root: Root | null = null;
 let host: HTMLDivElement;
 
-function mount() {
+async function mount() {
   host = document.createElement("div");
   document.body.appendChild(host);
-  act(() => { root = createRoot(host); root!.render(<App />); });
+  await act(async () => {
+    root = createRoot(host);
+    root!.render(<App />);
+  });
 }
-function unmount() {
-  act(() => root?.unmount());
+async function unmount() {
+  await act(async () => {
+    root?.unmount();
+  });
   host?.remove();
   root = null;
 }
-function setHash(h: string) {
-  act(() => { window.location.hash = h; });
+async function setHash(h: string) {
+  await act(async () => {
+    window.location.hash = h;
+  });
 }
 function text() { return host.textContent ?? ""; }
 
@@ -68,33 +75,33 @@ function persistState(mutate: (s: ReturnType<typeof seed>) => void) {
 }
 
 describe("route smoke — signed out", () => {
-  it("renders the landing page at /", () => {
-    mount();
+  it("renders the landing page at /", async () => {
+    await mount();
     expect(text()).toContain("Academia");
-    unmount();
+    await unmount();
   });
 
-  it("renders auth at /auth", () => {
-    setHash("/auth");
-    mount();
+  it("renders auth at /auth", async () => {
+    await setHash("/auth");
+    await mount();
     expect(text()).toMatch(/Sign In|Sign Up/);
-    unmount();
+    await unmount();
   });
 
-  it("guards app routes to /auth when signed out", () => {
+  it("guards app routes to /auth when signed out", async () => {
     persistState(s => { s.session.authed = false; });
-    setHash("/dashboard");
-    mount();
+    await setHash("/dashboard");
+    await mount();
     expect(text()).toMatch(/Sign In|Sign Up/);
-    unmount();
+    await unmount();
   });
 
-  it("renders banned status for banned sessions", () => {
+  it("renders banned status for banned sessions", async () => {
     persistState(s => { s.session.authed = true; s.session.status = "BAN"; });
-    setHash("/dashboard");
-    mount();
+    await setHash("/dashboard");
+    await mount();
     expect(text().toLowerCase()).toMatch(/banned|locked|appeal/);
-    unmount();
+    await unmount();
   });
 });
 
@@ -102,21 +109,21 @@ describe("route smoke — student", () => {
   beforeEach(() => persistState(s => { s.session.authed = true; s.session.role = "student"; }));
 
   for (const route of STUDENT_ROUTES) {
-    it(`mounts ${route} without crashing`, () => {
-      setHash(route);
-      mount();
+    it(`mounts ${route} without crashing`, async () => {
+      await setHash(route);
+      await mount();
       expect(host.querySelector("#main-canvas")).toBeTruthy();
-      unmount();
+      await unmount();
     });
   }
 
-  it("redirects admin routes away from students", () => {
+  it("redirects admin routes away from students", async () => {
     persistState(s => { s.session.authed = true; s.session.role = "student"; });
-    setHash("/admin/dashboard");
-    mount();
+    await setHash("/admin/dashboard");
+    await mount();
     expect(host.querySelector("#main-canvas")).toBeTruthy();
     expect(window.location.hash).not.toContain("/admin");
-    unmount();
+    await unmount();
   });
 });
 
@@ -124,11 +131,11 @@ describe("route smoke — admin", () => {
   beforeEach(() => persistState(s => { s.session.authed = true; s.session.role = "admin"; }));
 
   for (const route of ADMIN_ROUTES) {
-    it(`mounts ${route} without crashing`, () => {
-      setHash(route);
-      mount();
+    it(`mounts ${route} without crashing`, async () => {
+      await setHash(route);
+      await mount();
       expect(host.querySelector("#main-canvas")).toBeTruthy();
-      unmount();
+      await unmount();
     });
   }
 });

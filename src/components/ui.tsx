@@ -201,3 +201,146 @@ export function useCanvasSize(ref: React.RefObject<HTMLCanvasElement | null>, dr
     return () => ro.disconnect();
   }, [ref]);
 }
+
+/* ============================================================================
+   SKELETAL UI LOADING SHELLS (Zero spinners, instant scannable layout)
+   ============================================================================ */
+
+export function LibrarySkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse" aria-label="Loading Active-Recall Library...">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-2">
+          <div className="h-4 w-32 rounded bg-[#0B3D91]/20" />
+          <div className="h-8 w-64 rounded bg-[#0B3D91]/30" />
+        </div>
+        <div className="flex gap-2">
+          <div className="h-6 w-24 rounded-full bg-[var(--background-300)]" />
+          <div className="h-6 w-20 rounded-full bg-[var(--background-300)]" />
+        </div>
+      </div>
+      <div className="flex gap-2 border-b-2 pb-2" style={{ borderColor: "var(--background-300)" }}>
+        <div className="h-7 w-20 rounded-full bg-[var(--background-200)]" />
+        <div className="h-7 w-24 rounded-full bg-[var(--background-200)]" />
+        <div className="h-7 w-28 rounded-full bg-[var(--background-200)]" />
+      </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="sheet p-5 space-y-4 lg:col-span-2">
+          <div className="h-6 w-48 rounded bg-[var(--background-300)]" />
+          <div className="h-44 w-full rounded-xl border-2 border-dashed border-[var(--background-300)] bg-[var(--background-100)]" />
+          <div className="grid grid-cols-4 gap-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-16 rounded-lg bg-[var(--background-200)]" />
+            ))}
+          </div>
+        </div>
+        <div className="sheet p-5 space-y-3">
+          <div className="h-5 w-36 rounded bg-[var(--background-300)]" />
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-12 rounded-lg border border-[var(--background-300)] bg-[var(--background-50)]" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NumeraSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse" aria-label="Loading Numera Graphing Engine...">
+      <div className="flex items-end justify-between">
+        <div className="space-y-2">
+          <div className="h-4 w-36 rounded bg-[#0B3D91]/20" />
+          <div className="h-8 w-56 rounded bg-[#0B3D91]/30" />
+        </div>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-[440px_1fr]">
+        <div className="sheet p-4 space-y-3" style={{ minHeight: "560px" }}>
+          <div className="flex justify-between">
+            <div className="h-5 w-32 rounded bg-[var(--background-300)]" />
+            <div className="h-6 w-24 rounded bg-[var(--background-200)]" />
+          </div>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-20 rounded-xl border-2 border-[var(--background-300)] bg-[var(--background-50)] p-3 space-y-2">
+              <div className="h-3 w-20 rounded bg-[var(--background-200)]" />
+              <div className="h-7 w-full rounded bg-[var(--background-200)]" />
+            </div>
+          ))}
+        </div>
+        <div className="sheet overflow-hidden !p-0">
+          <div className="flex h-[560px] w-full flex-col items-center justify-center border-2 border-[var(--background-300)] bg-[#fffdf7]">
+            {/* Skeletal coordinate crosshair */}
+            <div className="relative h-full w-full">
+              <div className="absolute top-1/2 w-full border-t border-[var(--background-300)]" />
+              <div className="absolute left-1/2 h-full border-l border-[var(--background-300)]" />
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#0B3D91]/40 p-3">
+                <div className="h-2 w-2 rounded-full bg-[#0B3D91]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function LockerSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse" aria-label="Loading Sealed Document Locker...">
+      <div className="space-y-2">
+        <div className="h-4 w-40 rounded bg-[#0B3D91]/20" />
+        <div className="h-8 w-64 rounded bg-[#0B3D91]/30" />
+      </div>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3, 4, 5, 6].map(i => (
+          <div key={i} className="sheet p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="h-8 w-8 rounded-lg bg-[#0B3D91]/15" />
+              <div className="h-4 w-16 rounded-full bg-[var(--background-300)]" />
+            </div>
+            <div className="h-5 w-40 rounded bg-[var(--background-300)]" />
+            <div className="h-3 w-24 rounded bg-[var(--background-200)]" />
+            <div className="pt-2 border-t border-[var(--background-300)] flex justify-between">
+              <div className="h-4 w-16 rounded bg-[var(--background-200)]" />
+              <div className="h-4 w-12 rounded bg-[var(--background-200)]" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function TableSkeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <div className="space-y-3 animate-pulse">
+      <div className="h-8 w-full rounded-lg bg-[var(--background-200)]" />
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex gap-3 py-2 border-b border-[var(--background-300)]">
+          <div className="h-4 w-1/4 rounded bg-[var(--background-200)]" />
+          <div className="h-4 w-1/4 rounded bg-[var(--background-100)]" />
+          <div className="h-4 w-1/4 rounded bg-[var(--background-200)]" />
+          <div className="h-4 w-1/4 rounded bg-[var(--background-100)]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ViewSkeleton({ route }: { route?: string }) {
+  if (route?.includes("library")) return <LibrarySkeleton />;
+  if (route?.includes("numera")) return <NumeraSkeleton />;
+  if (route?.includes("locker")) return <LockerSkeleton />;
+  return (
+    <div className="space-y-6 animate-pulse" aria-label="Loading view...">
+      <div className="space-y-2">
+        <div className="h-4 w-32 rounded bg-[#0B3D91]/20" />
+        <div className="h-8 w-56 rounded bg-[#0B3D91]/30" />
+      </div>
+      <div className="sheet p-6 space-y-4">
+        <div className="h-6 w-48 rounded bg-[var(--background-300)]" />
+        <TableSkeleton rows={4} />
+      </div>
+    </div>
+  );
+}

@@ -238,7 +238,11 @@ function evalExpr(src: string, env: Map<string, Val>): Val {
     let left = mul();
     while (peek() === "+" || peek() === "-") {
       const op = toks[p++]; const right = mul();
-      if (op === "+" && (typeof left === "string" || typeof right === "string")) left = String(left) + String(right);
+      if (op === "+" && (typeof left === "string" || typeof right === "string")) {
+        const combined = String(left) + String(right);
+        if (combined.length > MAX_STR) throw new Error(`string length limit exceeded (${combined.length} > ${MAX_STR})`);
+        left = combined;
+      }
       else left = op === "+" ? num(left) + num(right) : num(left) - num(right);
     }
     return left;
@@ -342,4 +346,150 @@ export function runProgram(code: string): RunResult {
     lines.push({ text: `— exited 1 · ${steps} ops`, kind: "sys" });
     return { ok: false, lines, steps, ms: performance.now() - t0 };
   }
+}
+
+/* ============================================================================
+   PREDICTIVE STATIC ANALYZER & PRE-COMPILATION SESSIONS
+   ============================================================================ */
+
+export interface CodeDiagnostic {
+  line: number;
+  severity: "error" | "warn";
+  message: string;
+}
+
+/** Pre-compilation static analysis: detects infinite loops, bracket mismatches,
+    and step budget exhaustion before runtime execution. */
+export function analyzeCode(src: string): CodeDiagnostic[] {
+  const diagnostics: CodeDiagnostic[] = [];
+  if (!src.trim()) return diagnostics;
+
+  const lines = src.split("\n");
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let inString = false;
+
+  for (let l = 0; l < lines.length; l++) {
+    const lineText = lines[l];
+    if (lineText.trim().startsWith("//")) continue;
+
+    for (let c = 0; c < lineText.length; c++) {
+      const ch = lineText[c];
+      if (ch === '"' && (c === 0 || lineText[c - 1] !== "\\")) inString = !inString;
+      if (!inString) {
+        if (ch === "(") parenDepth++;
+        if (ch === ")") {
+          parenDepth--;
+          if (parenDepth < 0) {
+            diagnostics.push({ line: l + 1, severity: "error", message: `Unexpected closing parenthesis ")"` });
+            parenDepth = 0;
+          }
+        }
+        if (ch === "{") braceDepth++;
+        if (ch === "}") {
+          braceDepth--;
+          if (braceDepth < 0) {
+            diagnostics.push({ line: l + 1, severity: "error", message: `Unexpected closing brace "}"` });
+            braceDepth = 0;
+          }
+        }
+      }
+    }
+  }
+
+  if (parenDepth > 0) {
+    diagnostics.push({ line: lines.length, severity: "error", message: `Unclosed parenthesis (missing ${parenDepth} ")")` });
+  }
+  if (braceDepth > 0) {
+    diagnostics.push({ line: lines.length, severity: "error", message: `Unclosed block (missing ${braceDepth} "}")` });
+  }
+
+  try {
+    const program = parseProgram(src);
+    const declared = new Set<string>();
+
+    function inspectStatements(sts: St[]): { mutated: Set<string>; estSteps: number } {
+      const mutated = new Set<string>();
+      let estSteps = 0;
+
+      for (const st of sts) {
+        estSteps++;
+        if (st.kind === "let" && st.name) {
+          declared.add(st.name);
+        } else if (st.kind === "assign" && st.name) {
+          mutated.add(st.name);
+          if (!declared.has(st.name)) {
+            diagnostics.push({
+              line: st.line,
+              severity: "error",
+              message: `Variable "${st.name}" assigned before declaration (use let ${st.name} = ...)`,
+            });
+          }
+        } else if (st.kind === "while") {
+          const cond = st.cond?.trim() ?? "";
+
+          // Check unconditional while(true) / while(1)
+          if (cond === "true" || cond === "1" || cond === "1 == 1") {
+            diagnostics.push({
+              line: st.line,
+              severity: "error",
+              message: `Infinite loop detected: condition is permanently truthy (${cond}) without exit bounds`,
+            });
+          } else {
+            const condVars = Array.from(cond.matchAll(/[a-zA-Z_][a-zA-Z0-9_]*/g)).map(m => m[0]);
+            const filteredVars = condVars.filter(v => v !== "true" && v !== "false" && v !== "pi");
+
+            const bodyStats = inspectStatements(st.body ?? []);
+            bodyStats.mutated.forEach(v => mutated.add(v));
+
+            const anyMutated = filteredVars.some(v => bodyStats.mutated.has(v));
+            if (filteredVars.length > 0 && !anyMutated) {
+              diagnostics.push({
+                line: st.line,
+                severity: "warn",
+                message: `Potential infinite loop: condition variables (${filteredVars.join(", ")}) are never updated inside loop body`,
+              });
+            }
+
+            estSteps += bodyStats.estSteps * 100;
+          }
+        } else if (st.kind === "if") {
+          const ifBody = inspectStatements(st.body ?? []);
+          const elseBody = st.elseBody ? inspectStatements(st.elseBody) : { mutated: new Set<string>(), estSteps: 0 };
+          ifBody.mutated.forEach(v => mutated.add(v));
+          elseBody.mutated.forEach(v => mutated.add(v));
+          estSteps += Math.max(ifBody.estSteps, elseBody.estSteps);
+        }
+      }
+
+      return { mutated, estSteps };
+    }
+
+    const overall = inspectStatements(program);
+    if (overall.estSteps > 20000) {
+      diagnostics.push({
+        line: 1,
+        severity: "warn",
+        message: `High execution complexity: estimated instructions (${overall.estSteps} ops) may exhaust VM step budget (20,000 ops)`,
+      });
+    }
+  } catch (e) {
+    const msg = (e as Error).message;
+    const match = msg.match(/line (\d+): (.+)/);
+    if (match) {
+      diagnostics.push({
+        line: parseInt(match[1], 10),
+        severity: "error",
+        message: match[2],
+      });
+    } else {
+      diagnostics.push({
+        line: 1,
+        severity: "error",
+        message: msg,
+      });
+    }
+  }
+
+  return diagnostics;
 }

@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { Eye, FileKey2, KeyRound, Lock, ShieldAlert, Trash2, Upload } from "lucide-react";
 import { useApp, uid, fmtDate, type VaultDoc } from "@/engine/store";
 import { useModal } from "@/engine/modal";
-import { parseLockFile, decryptDocument, encryptDocument, serializeLockFile } from "@/engine/locker-crypto";
+import { parseLockFile, decryptDocument, encryptDocument, serializeLockFile, validateContainerSchema } from "@/engine/locker-crypto";
 import { PageHeader, Pill, SectionHead } from "@/components/ui";
 
 function scrambleOf(name: string): string {
@@ -63,8 +63,9 @@ export function LockerView() {
     }
 
     if (typeof fileOrName === "string") {
-      // Demo mock key: create valid encrypted container on the fly with demo passphrase
-      const demoPw = pw || "academia-demo";
+      // Demo mock key: create valid encrypted container on the fly with the
+      // explicitly known demo passphrase. The UI always labels this clearly.
+      const demoPw = "academia-demo";
       const blob = await encryptDocument(new TextEncoder().encode("DEMO_KEY_PAYLOAD"), demoPw);
       const bytes = serializeLockFile(blob);
       await verifyAndImportBytes(bytes, fileName, demoPw);
@@ -73,7 +74,10 @@ export function LockerView() {
 
     try {
       const buffer = await fileOrName.arrayBuffer();
-      await verifyAndImportBytes(new Uint8Array(buffer), fileName, pw || "academia-demo");
+      // No silent fallback to demo passphrase for real user-uploaded files.
+      // If no passphrase is entered, attempt decryption with an empty string
+      // so the GCM tag check fails loudly rather than silently using demo key.
+      await verifyAndImportBytes(new Uint8Array(buffer), fileName, pw);
     } catch {
       up(d => { d.locker.tamper = true; });
       setImportErr(`Corrupted or unreadable container “${fileName}”.`);
@@ -119,7 +123,7 @@ export function LockerView() {
           <div className="rounded-lg border-2 p-4 font-mono text-xs leading-relaxed" style={{ borderColor: "var(--background-300)", background: "var(--background-50)" }}>
             <p>container: {doc.name}</p>
             <p>type: {doc.kind} · {doc.size}</p>
-            <p>cipher: XChaCha20-Poly1305</p>
+            <p>cipher: AES-256-GCM</p>
             <p>checksum: {scrambleOf(doc.name).split("·").join("")}</p>
             <p className="mt-2" style={{ color: "var(--forest-700)" }}>✓ signature matches provisioned keypair</p>
           </div>
@@ -148,10 +152,20 @@ export function LockerView() {
           up(d => { d.locker.docs.unshift({ id: uid(), name: `document_${d.locker.docs.length + 1}.academia-lock`, size: "120 KB", kind: "Document", scrambled: true, added: Date.now() }); });
           toast("New document sealed into the vault", "ok");
         }}>+ Seal new document</button>
-        <button className="btn" onClick={() => {
+        <button className="btn" onClick={async () => {
           const bad = s.locker.docs.some(d => !d.scrambled);
-          if (bad) { up(d => { d.locker.tamper = true; }); toast("Integrity check FAILED — unsealed document found", "err"); }
-          else toast(`Integrity check passed · ${s.locker.docs.length} containers verified`, "ok");
+          if (bad) {
+            up(d => { d.locker.tamper = true; });
+            toast("Integrity check FAILED — unsealed document found", "err");
+            return;
+          }
+          try {
+            const res = await validateContainerSchema(s.locker.docs);
+            toast(`Integrity check passed · ${s.locker.docs.length} containers verified (${res.checksum.slice(0, 8)}…)`, "ok");
+          } catch (err: unknown) {
+            up(d => { d.locker.tamper = true; });
+            toast(`Integrity check FAILED: ${(err as Error).message}`, "err");
+          }
         }}>Run integrity check</button>
         {s.locker.lastImport && <span className="self-center font-mono text-[11px]" style={{ color: "var(--text-500)" }}>last key import {fmtDate(s.locker.lastImport)}</span>}
       </div>

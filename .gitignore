@@ -1,41 +1,96 @@
-# Dependencies
+# ==============================================================================
+# ACADEMIA REPOSITORY IGNORE SPECIFICATION (.gitignore)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Dependency & Package Manager Trees
+# ------------------------------------------------------------------------------
 node_modules/
 .pnp
 .pnp.js
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
 
-# Production build artifacts
+# ------------------------------------------------------------------------------
+# 2. Production & Build Outputs
+# ------------------------------------------------------------------------------
 dist/
 dist-ssr/
-*.local
+out/
+build/
+.vite/
 
-# Environment variables & secrets
+# ------------------------------------------------------------------------------
+# 3. Environment Variables, Secrets & Vault Containers
+# ------------------------------------------------------------------------------
 .env
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*.local
+*.local
 *.academia-lock
+*.pem
+*.key
+*.cert
+*.crt
 
-# Logs & Debugging
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# ------------------------------------------------------------------------------
+# 4. Local Mock States, Database Dumps & Backups
+# ------------------------------------------------------------------------------
+.academia-mock-store*
+*.backup
+*.dump
+*.sql.bak
+*.sqlite
+*.sqlite3
+*.db
 
-# Editor & OS files
+# ------------------------------------------------------------------------------
+# 5. Testing & Code Coverage Overheads
+# ------------------------------------------------------------------------------
+coverage/
+.vitest.cache/
+.nyc_output/
+*.lcov
+test-results/
+
+# ------------------------------------------------------------------------------
+# 6. IDE, Editor & Operating System Overheads
+# ------------------------------------------------------------------------------
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
+[Dd]esktop.ini
+
 .idea/
+.vscode/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.swo
+*.swp
+*.sublime-project
+*.sublime-workspace
 
-# Testing & Coverage
-coverage/
-*.lcov
-.nyc_output/
-
+# ------------------------------------------------------------------------------
+# 7. Logging & Runtime Process Dumps
+# ------------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.turbo/
+.npm/

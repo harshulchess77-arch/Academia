@@ -18,6 +18,9 @@ import {
   serializeLockFile,
   parseLockFile,
   MAGIC,
+  computeSchemaChecksum,
+  validateContainerSchema,
+  TamperError,
 } from "@/engine/locker-crypto";
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -118,6 +121,35 @@ describe("KDF parameters", () => {
   it("stores a 96-bit IV", async () => {
     const blob = await encryptDocument(plaintext, "pw");
     expect(blob.iv.byteLength).toBe(12);
+  });
+});
+
+// ── schema validation & integrity sentinel ─────────────────────────────────
+describe("schema validator & tamper sentinel", () => {
+  it("computes deterministic SHA-256 structural checksum regardless of key order", async () => {
+    const objA = { version: 3, id: "123", email: "student@academia.app" };
+    const objB = { email: "student@academia.app", version: 3, id: "123" };
+    const hashA = await computeSchemaChecksum(objA);
+    const hashB = await computeSchemaChecksum(objB);
+    expect(hashA).toBe(hashB);
+    expect(hashA.length).toBe(64);
+  });
+
+  it("validates intact container schema", async () => {
+    const validData = { version: 3, flashcards: [], session: { role: "student" } };
+    const res = await validateContainerSchema(validData);
+    expect(res.valid).toBe(true);
+    expect(res.checksum.length).toBe(64);
+  });
+
+  it("throws TamperError when prototype polluting keys exist", async () => {
+    const tampered = JSON.parse('{"version":3,"__proto__":{"admin":true}}');
+    await expect(validateContainerSchema(tampered)).rejects.toThrow(TamperError);
+  });
+
+  it("throws TamperError on checksum mismatch", async () => {
+    const data = { version: 3, data: "genuine" };
+    await expect(validateContainerSchema(data, "0000000000000000000000000000000000000000000000000000000000000000")).rejects.toThrow(TamperError);
   });
 });
 

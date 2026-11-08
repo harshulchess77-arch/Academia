@@ -1,0 +1,29 @@
+# Academia
+
+> A deterministic, privacy-first academic workspace for rigorous student workflows (STEM, mathematics, active recall, admissions, and software modeling).
+
+Academia is a local-first web application built on strict deterministic execution principles. Core scheduling, mathematical calculations, code execution, and diagnostic bands are 100% reproducible with zero probabilistic black-box models or third-party trackers.
+
+## Core Modules & Features
+
+- [Overview & Landing](https://academia.app/): Main landing workbench detailing the tactile stationery design system, local-first offline state, and academic tooling.
+- [Active-Recall Library](https://academia.app/library): SuperMemo SM-2 spaced repetition engine with cloze deletions (`{{c1::answer::hint}}`), leech detection (lapses ≥ 4), and formula-injection-safe CSV/JSON import/export.
+- [Sealed Document Locker](https://academia.app/locker): Client-side zero-knowledge document vault using AES-256-GCM encryption with PBKDF2-SHA-256 key derivation (600,000 iterations, 128-bit salt, 96-bit IV) in the `.academia-lock` container format.
+- [Numera Math Engine](https://academia.app/numera): Deterministic symbolic expression parser, numerical derivative calculator, adaptive plotting engine, and bisection root finder.
+- [Code Sandbox](https://academia.app/sandbox): Bounded Abstract Syntax Tree (AST) virtual machine (`acad-vm`) executing student code with step budgets without `eval()` or `new Function()`.
+- [Tally & Admissions](https://academia.app/tally): Coursework score forecaster, credit-weighted GPA engine, and deadline milestone ladder.
+- [Pomodoro & Heatmap](https://academia.app/pomodoro): Local-calendar focus timer with informational activity heatmaps that never streak-shame or send telemetry.
+- [Community Charter Filter](https://academia.app/community): Multi-stage normalization and anti-evasion text moderation pipeline (Unicode NFKC, homoglyph resolution, zero-width stripping, leet-speak decode, and bilingual Hindi/Hinglish vocabulary moderation).
+- [Authentication & Compliance](https://academia.app/auth): Privacy governance compliant with COPPA, GDPR-K, and India's DPDP Act 2023 with verified parental consent workflows.
+- [System Status & Verification](https://academia.app/status): Real-time zero-knowledge diagnostic dashboard proving offline capability and client-side encryption.
+
+## Technical Stack & Invariants
+
+- **Runtime & Build**: React 19, TypeScript 5.9 (strict mode, zero `any`), Vite 7, Tailwind CSS v4 (`notebook-skin` design tokens: Paper and Midnight palettes).
+- **Security & Privacy**: Zero analytics scripts, zero third-party telemetry, WebCryptographic primitives (`crypto.subtle`), strict Content Security Policy, and PostgreSQL Row-Level Security (RLS).
+- **Offline Storage**: Version-clamped reactive local state (`academia-state-v3`) with prototype-pollution defense allowlists and automatic quota refills at local midnight.
+
+## Optional
+
+- [Complete Specification](https://academia.app/llms-full.txt): Deep architectural reference, mathematical formulas, crypto byte layouts, and AST interpreter limits.
+

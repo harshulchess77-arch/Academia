@@ -104,7 +104,7 @@ export function computeDeckAnalytics(
   const leeches = detectLeeches(cards);
 
   return {
-    retentionRate: Math.round(retentionRate * 100) / 100,
+    retentionRate, // raw ratio [0,1] — round only at display site (library.tsx uses Math.round(retentionRate*100)%)
     totalReviews: totalRatings,
     todayReviews,
     todayNew,

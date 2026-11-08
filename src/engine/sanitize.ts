@@ -40,8 +40,13 @@ function cleanNode(node: Node, doc: Document): Node | null {
 export function sanitizeHtml(html: string): string {
   if (!html) return "";
   const doc = new DOMParser().parseFromString(html, "text/html");
+  // Defense against DOM Clobbering:
+  // If user HTML contains <form id="body"> or <input name="body">, doc.body can be shadowed.
+  const bodyEl = (doc.getElementsByTagName("body")[0] || doc.body) as HTMLElement | null;
+  if (!bodyEl) return "";
+
   const frag = doc.createDocumentFragment();
-  for (const child of [...doc.body.childNodes]) {
+  for (const child of Array.from(bodyEl.childNodes)) {
     const k = cleanNode(child, doc);
     if (k) frag.appendChild(k);
   }

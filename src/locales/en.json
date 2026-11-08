@@ -1,0 +1,153 @@
+{
+  "app": {
+    "name": "Academia",
+    "tagline": "The Deterministic Student Notebook & Workbench",
+    "motto": "Zero black boxes. Zero probabilistic models. 100% reproducible execution loops."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "library": "Active-Recall Library",
+    "numera": "Numera Graphing",
+    "sandbox": "Deterministic Sandbox",
+    "locker": "Sealed Locker",
+    "catalyst": "Catalyst Rule Engine",
+    "pomodoro": "Focus Sessions",
+    "tally": "GPA Matrix & Tally",
+    "adoro": "Adoro Diagnostics",
+    "inventory": "Admissions Inventory",
+    "announcements": "Announcements",
+    "community": "Community Charter",
+    "portfolio": "Admissions Dossier",
+    "admin": "Admin Console",
+    "signIn": "Sign In",
+    "signUp": "Sign Up",
+    "signOut": "Sign Out"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "export": "Export",
+    "import": "Import",
+    "search": "Search",
+    "filter": "Filter",
+    "back": "Back",
+    "next": "Next",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "confirm": "Confirm",
+    "warning": "Warning",
+    "clean": "Clean",
+    "copy": "Copy",
+    "copied": "Copied to clipboard",
+    "download": "Download",
+    "refresh": "Refresh",
+    "actions": "Actions"
+  },
+  "library": {
+    "title": "Active-Recall Library",
+    "subtitle": "Canonical SuperMemo SM-2 algorithm with zero memory decay leaks",
+    "deckExplorer": "Deck Explorer",
+    "studyQueue": "Study Queue",
+    "newCard": "New Flashcard",
+    "dueCount": "Cards Due",
+    "easeFactor": "Ease Factor",
+    "interval": "Interval (days)",
+    "repetitions": "Reps",
+    "retention": "Retention Rate",
+    "forecast": "14-Day Queue Forecast",
+    "emptyDeck": "No cards found in current deck.",
+    "exportJson": "Export JSON",
+    "exportCsv": "Export CSV",
+    "exportLean": "Export Lean JSON (Stripped)",
+    "clozeHelp": "Use {{c1::answer::hint}} syntax to create automatic cloze deletion sibling cards.",
+    "formulaNeutralized": "Formulas neutralized during CSV export against spreadsheet injection."
+  },
+  "numera": {
+    "title": "Numera Deterministic Graphing Engine",
+    "subtitle": "Shunting-Yard RPN compilation with vectorized off-thread Web Worker streaming at 60 FPS",
+    "addEquation": "Add Equation",
+    "addSlider": "Add Slider",
+    "addTable": "Add Table",
+    "addMatrix": "Add Matrix",
+    "addText": "Add Note",
+    "parseTree": "Deterministic Parse Tree",
+    "parseTreeHelp": "Step-by-step structural algebraic sequence evaluated without floating-point drift.",
+    "roots": "Roots / Zeros",
+    "intersections": "Curve Intersections",
+    "viewControls": "Viewport Controls",
+    "stepSize": "Sampling Resolution (2,000 points/expression)"
+  },
+  "sandbox": {
+    "title": "Deterministic Virtual Machine (acad-vm)",
+    "subtitle": "Bounded AST execution environment with pre-compilation static hazard detection",
+    "run": "Execute Code",
+    "running": "Evaluating AST...",
+    "console": "Console Output",
+    "snapshots": "Rolling Snapshots",
+    "restoreSnapshot": "Restore",
+    "saveSnapshot": "Save Snapshot",
+    "stepBudget": "Step Budget Limit",
+    "infiniteLoopDetected": "Static Hazard Warning: Unconditional or unmutated loop detected before execution.",
+    "compilationClean": "AST Pre-compilation clean. Ready for deterministic evaluation."
+  },
+  "locker": {
+    "title": "Sealed Document Locker",
+    "subtitle": "High-assurance WebCrypto AES-256-GCM vault with PBKDF2-SHA-256 key derivation",
+    "newDocument": "Seal New Document",
+    "passphrase": "Vault Passphrase",
+    "passphrasePlaceholder": "Enter high-entropy passphrase...",
+    "encrypt": "Encrypt & Seal",
+    "decrypt": "Unlock Document",
+    "tamperDetected": "Security Alert: Tampered ciphertext or schema checksum mismatch detected.",
+    "tamperClean": "Integrity Check: SHA-256 schema checksum matches container signature.",
+    "iterations": "PBKDF2 Iterations",
+    "wireFormat": "Container Format: .academia-lock (ACA-LOCK header)"
+  },
+  "tally": {
+    "title": "GPA Matrix & Predictive Milestone Forecaster",
+    "subtitle": "Credit-weighted collegiate calculation with tier bump adjustments and score projections",
+    "unweightedGpa": "Unweighted GPA (4.0 Scale)",
+    "weightedGpa": "Weighted GPA (Tier Adjusted)",
+    "tiers": {
+      "standard": "Standard (+0.0)",
+      "honors": "Honors (+0.5)",
+      "ap": "Advanced Placement (+1.0)",
+      "dual": "Dual Enrollment (+1.0)"
+    },
+    "courseName": "Course Title",
+    "credits": "Credit Hours",
+    "currentScore": "Current Score (%)",
+    "targetScore": "Target Score (%)",
+    "milestoneProjection": "Score Target Advice",
+    "requiredAverage": "Required remaining assignment average"
+  },
+  "charter": {
+    "title": "Community Charter & Text Moderation",
+    "subtitle": "Dynamic multi-stage normalization filter preventing evasion and toxic speech",
+    "status": {
+      "clean": "Content Clean",
+      "warn": "Advisory Warning",
+      "block": "Blocked by Charter"
+    },
+    "violationFound": "Charter violation detected under keyword entry",
+    "advisoryNotice": "Client-side screening is advisory; certified server checks enforce final moderation."
+  },
+  "compliance": {
+    "jurisdiction": "Compliance Jurisdiction",
+    "dpdp": "India Digital Personal Data Protection (DPDP) Act 2023 compliant",
+    "gdpr": "EU General Data Protection Regulation (GDPR-K) child privacy compliant",
+    "coppa": "US Children's Online Privacy Protection Act (COPPA) compliant",
+    "parentalConsent": "Verifiable Parental Consent (VPC) single-use token lifecycle active",
+    "zeroTelemetry": "Privacy by Construction: Zero external telemetry, tracking pixels, or third-party beacons."
+  },
+  "errors": {
+    "configBreach": "Configuration Error: Environment invariants breached.",
+    "missingBackend": "Configuration Error: Missing verified backend service credentials.",
+    "unauthorizedMock": "Configuration Error: Unauthenticated mock data rollback prohibited in production."
+  }
+}
+

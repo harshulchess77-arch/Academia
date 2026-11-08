@@ -170,4 +170,30 @@ describe("pure helpers", () => {
     const r = requiredScore({ id: "g", name: "X", credits: 4, score: 80, done: 50, target: 90 })!;
     expect(r).toBeCloseTo(100);
   });
+
+  it("weightedGpaOf computes AP, Honors and Dual bumps", async () => {
+    const { weightedGpaOf } = await import("@/engine/store");
+    const s = seed();
+    const res = weightedGpaOf(s.grades);
+    expect(res.weighted).toBeGreaterThan(res.unweighted);
+    expect(res.totalCredits).toBeGreaterThan(0);
+    expect(["A+", "A", "B", "C"]).toContain(res.letterGpa);
+  });
+
+  it("forecastMilestones computes target gap advice correctly", async () => {
+    const { forecastMilestones } = await import("@/engine/store");
+    // Course with 50% done, 80 score, 90 target -> requires 100% on remaining
+    const f1 = forecastMilestones({ id: "1", name: "Math", credits: 4, score: 80, done: 50, target: 90 });
+    expect(f1.requiredAvg).toBeCloseTo(100);
+    expect(f1.feasible).toBe(true);
+
+    // Course with 90% done, 70 score, 90 target -> requires >100% (impossible)
+    const f2 = forecastMilestones({ id: "2", name: "Chem", credits: 3, score: 70, done: 90, target: 90 });
+    expect(f2.status).toBe("impossible");
+    expect(f2.feasible).toBe(false);
+
+    // Course with 50% done, 95 score, 80 target -> target already secured
+    const f3 = forecastMilestones({ id: "3", name: "English", credits: 2, score: 95, done: 50, target: 40 });
+    expect(f3.status).toBe("secured");
+  });
 });

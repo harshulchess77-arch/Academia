@@ -5,7 +5,9 @@ export const ASSISTANT_EXCLUDED = ["/404", "/500", "/banned", "/inactive", "/loc
 
 export function currentPath(): string {
   const h = window.location.hash.replace(/^#/, "");
-  return h === "" ? "/" : h;
+  if (h && h !== "") return h;
+  const p = window.location.pathname;
+  return p && p !== "/" && p !== "/blank" ? p : "/";
 }
 
 export function navigate(to: string) {
@@ -18,7 +20,11 @@ export function useRoute(): string {
   useEffect(() => {
     const onHash = () => { setPath(currentPath()); window.scrollTo({ top: 0 }); };
     window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    window.addEventListener("popstate", onHash);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("popstate", onHash);
+    };
   }, []);
   return path;
 }

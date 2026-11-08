@@ -1,6 +1,6 @@
-# Academia — Project Master Blueprint (PROJECT.md)
+# Academia — Master Project Blueprint (PROJECT.md)
 
-> Consolidated project documentation uniting the Project Overview, Technical Specifications, Architectural Blueprints, Security Controls, and Roadmap.
+> **Consolidated Master Specification uniting Project Vision, Functional Specifications, Architecture, Security Controls, and Quality Gates.**
 
 ---
 
@@ -10,7 +10,7 @@
 **Academia** is a deterministic, notebook-style workspace engineered for secondary and collegiate students pursuing STEM, mathematics, and high-stakes admissions preparation. Unlike conventional educational platforms that rely on non-deterministic LLM generations, opaque ranking heuristics, or invasive user tracking, Academia is built on three core pillars:
 1. **Mathematical & Algorithmic Determinism**: Every response, schedule, diagnostic band, and virtual machine run is 100% reproducible and cites its exact rule or formula.
 2. **Absolute Privacy Sovereignty**: Zero third-party trackers, zero advertising scripts, and full adherence to COPPA, GDPR-K, and India's DPDP Act 2023.
-3. **Local-First Resilience**: Full operational capability offline through a version-clamped local store, backed by high-assurance WebCrypto cryptography.
+3. **Local-First Resilience**: Full operational capability offline through a version-clamped local store (`academia-state-v3`), backed by high-assurance WebCrypto cryptography.
 
 ---
 
@@ -38,94 +38,104 @@ Academia implements the **Notebook-Skin** design language, reminiscent of tactil
   - Syntax: `{{c1::answer::hint}}`.
   - Child cards adopt the `<parentId>#c<index>` identifier format.
   - Editing preserves scheduling for persistent indices while cascading deletion cleanly.
-- **Review Log Ring Buffer**:
-  - Ring buffer capped at 5,000 entries tracking `{ cardId, q, ts, wasNew }`.
-  - Enforces daily review and new-card limits calculated via local calendar midnight boundaries (`dayKey`).
-- **Leech Detection**:
-  - Identifies chronically difficult cards (lapses $\ge 4$) under `LEECH/LAPSE_GTE_4` and provides actionable structural remediation suggestions.
+- **DOM Virtualization**:
+  - `VirtualCardScroller` strictly limits active DOM nodes to $\le 30$ elements at all times, scaling to decks with thousands of cards.
 - **Safe Deck Portability**:
   - CSV export neutralizes spreadsheet formula injection by prepending `'` to leading `=`, `+`, `-`, or `@`.
-  - Import verifies a 2MB cap, 5,000-row limit, clamps EF to $[1.3, 4.0]$, and protects against prototype pollution.
+  - Lean JSON export (`exportDeckToJSONStripped`) omits large historical review logs for portable deck distribution.
 
 ### 2. Sealed Document Locker (`src/views/locker.tsx`)
 - **WebCrypto AES-256-GCM Vault**:
   - Zero external npm dependencies. Uses standard `crypto.subtle`.
   - Keys derived via PBKDF2-SHA-256 with 600,000 iterations and a 128-bit random salt.
   - Unique 96-bit random IV per document.
+- **Background Web Worker**:
+  - Offloads PBKDF2 key derivation and AES-256-GCM routines to `src/engine/locker-worker.ts`.
 - **Binary Wire Container (`.academia-lock`)**:
   - Begins with magic header `ACA-LOCK` (version byte `0x01`).
   - Serializes iterations, salt, IV, and ciphertext with a 128-bit authentication tag.
-  - Tampered ciphertext or incorrect passphrases automatically trip the system's `TAMPER-LOCK` defensive state.
+  - Payload schema is protected by SHA-256 checksum sentinels (`validateContainerSchema`); tampering immediately throws `TamperError`.
 - **Zero Disk Exposure**:
   - Passphrases and derived cryptographic keys exist solely in transient memory; never written to `localStorage`.
 
-### 3. Community Moderation & Charter Filter (`src/engine/charter-filter.ts`)
+### 3. Numera Graphing Engine (`src/views/numera.tsx`)
+- **Interactive Multi-Node Model**: Supports 5 interactive row variants: `EQUATION`, `SLIDER`, `TABLE`, `MATRIX`, `TEXT`.
+- **Deterministic Shunting-Yard Parser (`src/engine/math.ts`)**:
+  - Automatic implicit multiplication expansion (`2x` $\to$ `2 * x`, `4sin(x)` $\to$ `4 * sin(x)`).
+  - Absolute value bars normalization (`|x|` $\to$ `abs(x)`).
+  - Reverse Polish Notation (RPN) compilation with strict operator precedence.
+  - Structural human-readable parse trees (`buildParseTree`) for algebraic step-by-step inspection.
+  - Numerical bisection solvers for zero-crossings (`findRoots`) and curve intersections (`findIntersections`).
+- **Vectorized Web Worker (`src/engine/numera-worker.ts`)**:
+  - Evaluates 2,000 sampling points per expression onto `Float64Array(4000)`.
+  - Streams pixel coordinate sets via zero-copy Transferable Objects for a locked 60 FPS viewport.
+
+### 4. Deterministic Virtual Machine (`src/engine/interpreter.ts`)
+- `acad-vm`: A bounded, deterministic AST interpreter executing without browser `eval()` or `new Function()`.
+- **Pre-Compilation Static Analysis (`analyzeCode`)**:
+  - Detects infinite loops (`while(true)`), unmutated loop condition variables, unclosed blocks, and instruction budget limits before execution.
+  - Automated session rolling snapshot manager retaining up to 10 historical snapshots.
+
+### 5. Tally & Pomodoro (`src/views/tally.tsx`)
+- **Credit-Weighted GPA Matrix**:
+  - Supports Standard (+0.0), Honors (+0.5), AP (+1.0), and Dual Enrollment (+1.0) course tiers.
+  - Calculates collegiate-standard unweighted and weighted GPA.
+- **Milestone Forecaster**:
+  - Forward-looking grade target gap analyzer (`forecastMilestones`) calculating exact assignment target scores for target letter grades.
+
+### 6. Community Moderation & Charter Filter (`src/engine/charter-filter.ts`)
 - Multi-tier evasion-resistant text moderation:
   - Unicode NFKC normalization.
   - Cyrillic/Greek homoglyph confusable translation (e.g. Cyrillic `і` $\to$ Latin `i`).
   - Zero-width character stripping.
   - Leet-speak normalization (`1` $\to$ `i`, `0` $\to$ `o`, `3` $\to$ `e`, `@` $\to$ `a`, `$` $\to$ `s`).
   - Letter-spacing collapse (e.g., `s t u p i d` $\to$ `stupid`).
-  - Vowel censor expansion (e.g., `st*pid` flagged accurately).
+  - Intra-word vowel censor expansion (e.g., `st*pid` flagged accurately).
   - Bilingual moderation covering English and romanized Hindi/Hinglish idioms.
-  - Scunthorpe allow-list patterns protecting innocent vocabulary (`dumbbell`, `assess`, `Moran's I test`).
-
-### 4. Deterministic Virtual Machine (`src/engine/interpreter.ts`)
-- `acad-vm`: A bounded, deterministic AST interpreter executing without browser `eval()` or `new Function()`.
-- Supports loops, variable assignments, standard mathematical operations, and snapshot rollbacks.
-- Strict step budget guarantees termination and prevents infinite execution stalls.
+  - Scunthorpe allow-list patterns protecting innocent academic vocabulary (`dumbbell`, `assess`, `Moran's I test`).
 
 ---
 
-## Part III: Technical Architecture & Systems Engineering
+## Part III: Systems Engineering & Production Infrastructure
 
 ### 1. State Management & Offline Resilience (`src/engine/store.tsx`)
 - Single source of truth managed via `AppState` (Version 3).
 - **Prototype Pollution Prevention**: `mergeObject()` validates all properties against seed models, explicitly discarding `__proto__`, `constructor`, and `prototype`.
 - **Clamping**: Rigid bounds checking for user roles, account statuses, and quota limits.
-- **Cross-Tab Synchronization**: Real-time multi-tab consistency managed through storage event listeners and monotonic operation counters (`ops`).
+- **Local Calendar Lifecycles**: Rollover logic calculated against the user's local timezone midnight and local Monday boundaries.
 
-### 2. Backend & Database Specification (Supabase / PostgreSQL)
-- **Migrations & Schemas (`supabase/migrations/20261107_init.sql`)**:
-  - `public.profiles`: Stores user identity, RBAC (`student`, `admin`), and account status (`ACTIVE`, `INACTIVE`, `BAN`).
-  - `public.quotas`: Backed by PostgreSQL serializable transactions via `consume_quota(target_key)`.
-  - `public.parental_consents`: Tracks verifiable guardian consent tokens bound to child profiles, single-use validation, and 48-hour expiration limits.
-  - `public.admin_warnings`: Append-only governance audit log.
-- **Row Level Security (RLS)**:
-  - Prevents students from reading foreign profiles or elevating their privileges.
-  - Enforces that administrative operations are restricted to authenticated admin profiles.
-
-### 3. Production Deployment & Security Headers (`vercel.json`)
+### 2. Production Deployment & Security Headers (`vercel.json`)
 - `Content-Security-Policy`:
   - `default-src 'self'`.
-  - `script-src 'self' 'unsafe-inline'` (evaluated for hash-based hardening).
+  - `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'`.
   - `style-src 'self' 'unsafe-inline'`.
-  - `font-src 'self'`.
-  - `frame-ancestors 'none'` (disallows framing everywhere).
-  - `connect-src 'self'`.
-- `Strict-Transport-Security`: `max-age=63072000; includeSubDomains; preload`.
+  - `font-src 'self' data:`.
+  - `img-src 'self' data:`.
+  - `connect-src 'self' https://*.supabase.co wss://*.supabase.co`.
+  - `frame-src https://www.youtube-nocookie.com`.
+  - `frame-ancestors 'none'`.
+  - `object-src 'none'`.
+  - `base-uri 'self'`.
+  - `form-action 'self'`.
+  - `worker-src 'self' blob:`.
+  - `upgrade-insecure-requests`.
 - `X-Frame-Options`: `DENY`.
 - `X-Content-Type-Options`: `nosniff`.
+- `Strict-Transport-Security`: `max-age=63072000; includeSubDomains; preload`.
 - `Referrer-Policy`: `strict-origin-when-cross-origin`.
-- `Permissions-Policy`: `camera=(), microphone=(), geolocation=()`.
+- `Permissions-Policy`: `geolocation=(), camera=(), microphone=(), magnetometer=()`.
 
 ---
 
 ## Part IV: Verification, Testing & Compliance
 
 ### 1. Automated Test Suites
-Vitest suites located in `src/__tests__/` and `test/`:
-- `test/locker-crypto.test.ts`: Round-trip AES-256-GCM encryption/decryption, binary format parsing, authentication tag tampering rejection, wrong passphrase rejection, and 1,000 IV uniqueness.
-- `test/charter-filter.test.ts`: 53+ test scenarios covering evasion normalizations, leetspeak, Hinglish vocabulary, Scunthorpe false-positive prevention, and severity output.
-- `test/parental-consent.test.ts`: Validates single-use parental tokens, 48h expiration, account mismatch rejections, and under-13 school code enforcement.
-- `src/__tests__/library.test.ts`: 10,000 randomized SM-2 review fuzzing, cloze sibling synchronization, ring-buffer review log analytics, CSV formula injection defense, and prototype pollution immunity.
-- `test/store.test.ts` & `test/smoke.test.tsx`: Component mounting, route transitions, and localStorage corruption recovery.
-
-### 2. Legal Questions Checklist for Minor Data Protection (DPDP Act & COPPA)
-*Operational checklist to review with qualified legal counsel:*
-1. **Verifiable Parental Consent (VPC)**: Sufficiency of signed token email loops under DPDP Act 2023 regulations vs. prospective government-mandated ID verification methods (e.g. DigiLocker).
-2. **School Authorization Exemption**: Legal status of institutional school administrators acting as surrogate consenters for under-13 student provisioning.
-3. **Behavioral Profiling Restrictions**: Analysis of diagnostic weakness mapping and focus timers under DPDP Section 9(2) prohibiting tracking or behavioral monitoring of children.
-4. **Data Retention & Right to Erasure**: Statutory timelines for executing parental deletion requests against academic dossiers, audit flags, and financial records.
-5. **Data Localization**: Compliance requirements governing hosting minor data inside India's geographic territory (AWS Mumbai / GCP Mumbai).
-
+255+ automated Vitest tests across 13 test files:
+- `test/math.test.ts`: Shunting-Yard RPN compilation, implicit multiplication, absolute values, parse tree builder, bisection root and intersection solvers.
+- `test/interpreter.test.ts`: AST evaluation, loop execution, step budget clamps, and `analyzeCode` static infinite loop detection.
+- `test/locker-crypto.test.ts`: WebCrypto AES-256-GCM round-trip, binary container parsing, schema checksum verification, IV uniqueness, and `TamperError` verification.
+- `test/seo-discovery.test.ts`: Search console meta tags, Open Graph / Twitter tags, Bing validation, `sitemap.xml`, and `llms.txt` specifications.
+- `test/store.test.ts`: Version 3 state hydration, weighted GPA calculations, milestone forecasting, and prototype pollution immunity.
+- `test/charter-filter.test.ts`: 53+ evasion test cases across Unicode normalizations, homoglyphs, and bilingual vocabularies.
+- `test/smoke.test.tsx`: Route mounting smoke tests for student and administrator roles with lazy-loaded Suspense boundaries.
+- `src/__tests__/library.test.ts`: 10,000-iteration SM-2 fuzzing, cloze sibling derivation, and formula injection defenses.

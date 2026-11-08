@@ -1,0 +1,29 @@
+# Academia Robots Configuration
+# https://academia.app/
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# AI Crawlers & LLM Context Discovery
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+# Sitemap Location (Google Search Console & Bing Webmaster Tools)
+Sitemap: https://academia.app/sitemap.xml
+

@@ -16,4 +16,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
     },
   },
+  build: {
+    target: "esnext",
+    assetsInlineLimit: 100000000,
+    chunkSizeWarningLimit: 100000,
+    cssCodeSplit: false,
+  },
+  worker: {
+    format: "es",
+  },
 });

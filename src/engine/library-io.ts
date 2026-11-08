@@ -18,7 +18,8 @@ const ALLOWED_CARD_KEYS = new Set([
 
 /** Neutralize formula injection in CSV cells */
 function sanitizeCsvCell(text: string): string {
-  if (/^[=+\-@]/.test(text)) {
+  const trimmed = text.trimStart();
+  if (/^[=+\-@\t\r%]/.test(trimmed)) {
     return `'${text}`;
   }
   return text;
@@ -26,7 +27,7 @@ function sanitizeCsvCell(text: string): string {
 
 /** Remove formula injection prefix on import */
 function unescapeCsvCell(text: string): string {
-  if (text.startsWith("'") && /^[=+\-@]/.test(text.slice(1))) {
+  if (text.startsWith("'") && /^[=+\-@\t\r%]/.test(text.slice(1).trimStart())) {
     return text.slice(1);
   }
   return text;
@@ -69,6 +70,7 @@ export function importDeckFromCSV(csv: string, defaultDeck = "Imported"): Flashc
 
   // Parse header
   const isHeader = lines[0].toLowerCase().includes("front");
+  const hasIdCol = isHeader && lines[0].toLowerCase().startsWith("id");
   const dataLines = isHeader ? lines.slice(1) : lines;
 
   const cards: Flashcard[] = [];
@@ -88,7 +90,7 @@ export function importDeckFromCSV(csv: string, defaultDeck = "Imported"): Flashc
     let interval = 0;
     let reps = 0;
 
-    if (cols.length >= 4 && (cols[0].startsWith("f") || cols[0].length >= 8)) {
+    if (cols.length >= 4 && (hasIdCol || cols[0].startsWith("f") || cols[0].length >= 8)) {
       id = cols[0] || uid();
       front = cols[1];
       back = cols[2];
@@ -154,6 +156,12 @@ function parseCsvLine(line: string): string[] {
 /** Export cards to validated JSON */
 export function exportDeckToJSON(cards: Flashcard[]): string {
   return JSON.stringify(cards, null, 2);
+}
+
+/** Export cards to lean JSON (omits history array for portable storage) */
+export function exportDeckToJSONStripped(cards: Flashcard[]): string {
+  const stripped = cards.map(({ history: _, ...rest }) => rest);
+  return JSON.stringify(stripped, null, 2);
 }
 
 /** Import cards from JSON with prototype pollution protection */

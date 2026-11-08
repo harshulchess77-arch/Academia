@@ -1,5 +1,9 @@
 /* Academia · headless local mock store (no server, fully deterministic) */
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { ENV } from "./env";
+import { getSupabaseClient } from "./supabase";
+
+export { ENV, getSupabaseClient };
 
 export type Tier = "A" | "B" | "C" | "D" | "E";
 export type Role = "student" | "admin";
@@ -28,7 +32,16 @@ export interface ReviewLogEntry {
 export interface Note { id: string; title: string; subject: string; body: string; updated: number; }
 export interface Opportunity { id: string; title: string; org: string; deadline: number; tier: Tier; kind: string; tracked: boolean; }
 export interface Announcement { id: string; title: string; body: string; priority: "pinned" | "high" | "normal"; tiers: Tier[]; read: boolean; ts: number; author: string; }
-export interface Course { id: string; name: string; credits: number; score: number; done: number; target: number; }
+export type CourseWeightTier = "standard" | "honors" | "ap" | "dual";
+export interface Course {
+  id: string;
+  name: string;
+  credits: number;
+  score: number;
+  done: number;
+  target: number;
+  tier?: CourseWeightTier;
+}
 export interface Proposal { id: string; title: string; abstract: string; status: "Draft" | "Submitted" | "In review" | "Accepted"; updated: number; }
 export interface Snapshot { id: string; label: string; code: string; ts: number; }
 export interface VaultDoc { id: string; name: string; size: string; kind: string; scrambled: boolean; added: number; }
@@ -193,11 +206,11 @@ export function seed(): AppState {
       { id: "a5", title: "Scratchpad stylus latency fix shipped", body: "Bezier smoothing now samples at pointer rate; strokes on 120Hz tablets no longer show faceting at speed.", priority: "normal", tiers: ["A", "B", "C", "D", "E"], read: true, ts: now - 6 * DAY, author: "Platform" },
     ],
     grades: [
-      { id: "g1", name: "Mathematics", credits: 4, score: 88, done: 60, target: 93 },
-      { id: "g2", name: "Physics", credits: 4, score: 81, done: 55, target: 90 },
-      { id: "g3", name: "Computer Science", credits: 3, score: 94, done: 70, target: 95 },
-      { id: "g4", name: "Chemistry", credits: 3, score: 76, done: 50, target: 85 },
-      { id: "g5", name: "English", credits: 2, score: 85, done: 65, target: 88 },
+      { id: "g1", name: "Mathematics", credits: 4, score: 88, done: 60, target: 93, tier: "ap" },
+      { id: "g2", name: "Physics", credits: 4, score: 81, done: 55, target: 90, tier: "ap" },
+      { id: "g3", name: "Computer Science", credits: 3, score: 94, done: 70, target: 95, tier: "honors" },
+      { id: "g4", name: "Chemistry", credits: 3, score: 76, done: 50, target: 85, tier: "standard" },
+      { id: "g5", name: "English", credits: 2, score: 85, done: 65, target: 88, tier: "standard" },
     ],
     pomodoro: { sessions, focusMin: 25, breakMin: 5 },
     adoro: [
@@ -258,7 +271,12 @@ interface AppCtx {
 }
 const Ctx = createContext<AppCtx | null>(null);
 const LS_KEY = "academia-state-v3";
-const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const DANGEROUS_KEYS = new Set([
+  "__proto__", "constructor", "prototype",
+  "valueOf", "toString", "toLocaleString",
+  "hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable",
+  "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__",
+]);
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -290,13 +308,28 @@ function mergeObject(seedObj: Record<string, unknown>, got: Record<string, unkno
     if (DANGEROUS_KEYS.has(key)) continue;
     out[key] = key in got ? mergeValue(seedObj[key], got[key]) : seedObj[key];
   }
-  // optional fields that exist only in persisted data (e.g. session.parental)
+  // optional fields that exist only in persisted data (e.g. session.parental, session.inactiveUntil)
+  // Explicit allowlist prevents arbitrary attacker-controlled keys from being merged
+  // into the app state from a tampered localStorage payload.
+  const OPTIONAL_SCALAR_KEYS = new Set([
+    "inactiveUntil", "provisionStart", "token", "email",
+    "clozeIdx", "sourceNoteId", "lapses", "tier",
+  ]);
+  // Optional sub-objects with a fixed known shape; validated field-by-field.
+  const OPTIONAL_OBJECT_EXEMPLARS: Record<string, Record<string, unknown>> = {
+    parental: { email: "", token: null }, // { email: string; token: string | null }
+  };
   for (const key of Object.keys(got)) {
     if (DANGEROUS_KEYS.has(key) || key in out) continue;
     const v = got[key];
+    if (key in OPTIONAL_OBJECT_EXEMPLARS) {
+      // Validate the sub-object against its known shape; merge scalars only
+      if (!isPlainObject(v)) continue;
+      out[key] = mergeObject(OPTIONAL_OBJECT_EXEMPLARS[key], v as Record<string, unknown>);
+      continue;
+    }
+    if (!OPTIONAL_SCALAR_KEYS.has(key)) continue; // drop unknown extra keys
     if (v === null || typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && isFinite(v))) out[key] = v;
-    else if (isPlainObject(v)) out[key] = mergeObject({}, v);
-    else if (Array.isArray(v)) out[key] = v.filter(x => x === null || typeof x !== "object");
   }
   return out;
 }
@@ -362,19 +395,59 @@ export function refillQuotas(s: AppState, now = Date.now()): AppState {
   return { ...s, quotas, quotaReset: { daily, weekly } };
 }
 
+export function buildProductionCleanState(): AppState {
+  const base = seed();
+  base.session = {
+    authed: false,
+    role: "student",
+    name: "",
+    email: "",
+    tier: "A",
+    stage: "questionnaire",
+    status: "ACTIVE",
+  };
+  base.admin.students = [];
+  base.admin.warnings = [];
+  base.flashcards = [];
+  base.notes = [];
+  base.inventory = [];
+  base.announcements = [];
+  base.grades = [];
+  base.proposals = [];
+  base.sandbox.snapshots = [];
+  base.locker.docs = [];
+  return base;
+}
+
 function load(): AppState {
+  if (ENV.appEnv === "production" && (!ENV.supabaseUrl || !ENV.supabaseAnonKey)) {
+    throw new Error("Configuration Error: Production environment configuration invariants breached. Missing verified backend service credentials.");
+  }
+
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const json: unknown = JSON.parse(raw);
       const parsed = sanitizeState(json);
       if (parsed) {
+        if (ENV.appEnv === "production" && !ENV.allowMockFallback && !parsed.session.authed) {
+          return buildProductionCleanState();
+        }
         // states persisted before quotaReset existed get one refill, then stamp normally
         const legacy = !isPlainObject(json) || !isPlainObject((json as Record<string, unknown>).quotaReset);
         return refillQuotas(legacy ? { ...parsed, quotaReset: { daily: "", weekly: "" } } : parsed);
       }
     }
-  } catch { /* corrupted local state falls back to seed */ }
+  } catch {
+    if (ENV.appEnv === "production" && !ENV.allowMockFallback) {
+      throw new Error("Configuration Error: Corrupted state recovery failure. Mock data rollback prohibited in production.");
+    }
+  }
+
+  if (ENV.appEnv === "production" && !ENV.allowMockFallback) {
+    throw new Error("Configuration Error: Unauthenticated mock data rollback prohibited in production environment.");
+  }
+
   return seed();
 }
 
@@ -421,6 +494,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /* adopt state written by another tab instead of silently overwriting it */
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
+      if (e.isTrusted === false) return;
+      if (typeof window !== "undefined" && e.storageArea && e.storageArea !== localStorage) return;
       if (e.key !== LS_KEY || !e.newValue) return;
       try {
         const merged = sanitizeState(JSON.parse(e.newValue));
@@ -445,7 +520,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToasts(t => [...t.slice(-3), { id, msg, tone, action }]);
     window.setTimeout(() => dismiss(id), action ? 7000 : 4200);
   };
-  const resetAll = () => { localStorage.removeItem(LS_KEY); setS(seed()); };
+  const resetAll = () => {
+    try { localStorage.removeItem(LS_KEY); } catch {}
+    setS(ENV.appEnv === "production" && !ENV.allowMockFallback ? buildProductionCleanState() : seed());
+  };
 
   return <Ctx.Provider value={{ s, up, toast, toasts, dismiss, resetAll }}>{children}</Ctx.Provider>;
 }
@@ -474,4 +552,130 @@ export function requiredScore(g: Course): number | null {
   const remain = 100 - g.done;
   if (remain <= 0) return null;
   return (g.target - (g.score * g.done) / 100) / (remain / 100);
+}
+
+/* ============================================================================
+   CREDIT-WEIGHTED GPA CALCULATION MATRIX & PREDICTIVE TREND FORECASTER
+   ============================================================================ */
+
+function fmtNum(n: number, digits = 4): string {
+  if (!isFinite(n)) return String(n);
+  return String(parseFloat(n.toPrecision(digits)));
+}
+
+export const TIER_WEIGHT_BUMP: Record<CourseWeightTier, number> = {
+  standard: 0.0,
+  honors: 0.5,
+  ap: 1.0,
+  dual: 1.0,
+};
+
+export interface GpaMatrixResult {
+  unweighted: number; // 0 - 10 scale
+  weighted: number;   // incorporating AP/Honors/Dual bumps
+  totalCredits: number;
+  letterGpa: string;
+}
+
+export function weightedGpaOf(grades: Course[]): GpaMatrixResult {
+  const cr = grades.reduce((a, g) => a + g.credits, 0);
+  if (!cr) return { unweighted: 0, weighted: 0, totalCredits: 0, letterGpa: "N/A" };
+
+  const unweightedPts = grades.reduce((a, g) => a + g.credits * (g.score / 10), 0);
+  const weightedPts = grades.reduce((a, g) => {
+    const bump = g.tier ? (TIER_WEIGHT_BUMP[g.tier] ?? 0) : 0;
+    // Scale bump to 10-point scale: 0.5 on 4-scale = 1.25 on 10-scale
+    const scaledBump = bump * 1.25;
+    const adjustedScore = Math.min(10, (g.score / 10) + scaledBump);
+    return a + g.credits * adjustedScore;
+  }, 0);
+
+  const unweighted = unweightedPts / cr;
+  const weighted = weightedPts / cr;
+
+  let letterGpa = "F";
+  if (unweighted >= 9.0) letterGpa = "A+";
+  else if (unweighted >= 8.0) letterGpa = "A";
+  else if (unweighted >= 7.0) letterGpa = "B";
+  else if (unweighted >= 6.0) letterGpa = "C";
+  else if (unweighted >= 5.0) letterGpa = "D";
+
+  return { unweighted, weighted, totalCredits: cr, letterGpa };
+}
+
+export interface MilestoneForecast {
+  courseId: string;
+  courseName: string;
+  currentScore: number;
+  targetScore: number;
+  workDonePct: number;
+  remainingPct: number;
+  requiredAvg: number | null;
+  feasible: boolean;
+  status: "secured" | "reachable" | "critical" | "impossible" | "complete";
+  perAssignmentAdvice: string;
+}
+
+export function forecastMilestones(g: Course): MilestoneForecast {
+  const remain = 100 - g.done;
+  if (remain <= 0) {
+    return {
+      courseId: g.id,
+      courseName: g.name,
+      currentScore: g.score,
+      targetScore: g.target,
+      workDonePct: g.done,
+      remainingPct: 0,
+      requiredAvg: null,
+      feasible: g.score >= g.target,
+      status: "complete",
+      perAssignmentAdvice: g.score >= g.target ? "Course completed at or above target goal." : "Course coursework finalized.",
+    };
+  }
+
+  const req = (g.target - (g.score * g.done) / 100) / (remain / 100);
+
+  if (req <= 0) {
+    return {
+      courseId: g.id,
+      courseName: g.name,
+      currentScore: g.score,
+      targetScore: g.target,
+      workDonePct: g.done,
+      remainingPct: remain,
+      requiredAvg: 0,
+      feasible: true,
+      status: "secured",
+      perAssignmentAdvice: `Target secured! Even with 0% on remaining ${remain}%, final score will be ≥ ${g.target}%.`,
+    };
+  }
+
+  if (req > 100) {
+    return {
+      courseId: g.id,
+      courseName: g.name,
+      currentScore: g.score,
+      targetScore: g.target,
+      workDonePct: g.done,
+      remainingPct: remain,
+      requiredAvg: req,
+      feasible: false,
+      status: "impossible",
+      perAssignmentAdvice: `Mathematically unreachable (requires ${fmtNum(req, 4)}% on remaining assignments). Consider adjusting target goal.`,
+    };
+  }
+
+  const isCritical = req > 92;
+  return {
+    courseId: g.id,
+    courseName: g.name,
+    currentScore: g.score,
+    targetScore: g.target,
+    workDonePct: g.done,
+    remainingPct: remain,
+    requiredAvg: req,
+    feasible: true,
+    status: isCritical ? "critical" : "reachable",
+    perAssignmentAdvice: `Maintain an average of ${fmtNum(req, 4)}% across all remaining ${remain}% assignments to secure target ${g.target}%.`,
+  };
 }

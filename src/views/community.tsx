@@ -1,8 +1,10 @@
-/* Academia · Phase 3.16 — Q&A feed with live keystroke charter filter + collaborative study room */
+/* Academia · Phase 3.16 — Q&A feed with live keystroke charter filter + collaborative study room
+   UPGRADED: screenTextV2 replaces the deprecated screenText shim — now has full severity
+   data, Scunthorpe allow-list vetoes, and severity-differentiated banner UI (warn vs block). */
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Hand, MessageSquare, Send, Users } from "lucide-react";
+import { AlertTriangle, Hand, MessageSquare, Send, ShieldAlert, Users } from "lucide-react";
 import { useApp, uid, type Thread } from "@/engine/store";
-import { screenText } from "@/engine/rules";
+import { screenTextV2, type ScreenResult } from "@/engine/charter-filter";
 import { Avatar, PageHeader, Pill, SectionHead, Tabs } from "@/components/ui";
 import { cn } from "@/utils/cn";
 
@@ -13,14 +15,26 @@ function ago(ts: number): string {
   return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
-function KeystrokeBanner({ hits }: { hits: string[] }) {
-  if (hits.length === 0) return null;
+/** Severity-aware keystroke banner — shows warn vs block distinction.
+    "warn" = medium terms: amber border, posting still allowed (social nudge).
+    "block" = high terms: red border, posting disabled until rephrased. */
+function KeystrokeBanner({ result }: { result: ScreenResult }) {
+  if (result.hits.length === 0) return null;
+  const isBlock = result.overall === "block";
   return (
     <div role="alert" className="warn-slide mt-2 flex items-start gap-2 rounded-lg border-2 px-3 py-2"
-      style={{ borderColor: "var(--accent-500)", background: "var(--accent-100)" }}>
-      <AlertTriangle size={16} className="mt-0.5 flex-none" style={{ color: "var(--accent-600)" }} />
-      <p className="text-xs font-semibold leading-relaxed" style={{ color: "var(--accent-600)" }}>
-        Keystroke check: {hits.map(h => `“${h}”`).join(", ")} violate{hits.length === 1 ? "s" : ""} the Study Charter. Rephrase to enable posting — drafts are never sent or stored.
+      style={{
+        borderColor: isBlock ? "var(--accent-600)" : "var(--marigold-500)",
+        background: isBlock ? "var(--accent-100)" : "var(--marigold-100)",
+      }}>
+      {isBlock
+        ? <ShieldAlert size={16} className="mt-0.5 flex-none" style={{ color: "var(--accent-600)" }} />
+        : <AlertTriangle size={16} className="mt-0.5 flex-none" style={{ color: "var(--marigold-900)" }} />}
+      <p className="text-xs font-semibold leading-relaxed"
+        style={{ color: isBlock ? "var(--accent-600)" : "var(--marigold-900)" }}>
+        {isBlock ? "Charter violation — posting blocked: " : "Charter warning: "}
+        {result.hits.map(h => `"${h.term}" (${h.severity})`).join(", ")}.{" "}
+        Rephrase to enable posting — drafts are never sent or stored.
       </p>
     </div>
   );
@@ -34,19 +48,22 @@ export function CommunityView() {
   const [tag, setTag] = useState("Numera");
   const [replyFor, setReplyFor] = useState<string | null>(null);
   const [reply, setReply] = useState("");
-  const hits = screenText(title + " " + body);
-  const replyHits = screenText(reply);
+
+  // screenTextV2 — full severity + allow-list pipeline (replaces deprecated screenText shim)
+  const postResult = screenTextV2(title + " " + body);
+  const replyResult = screenTextV2(reply);
   const me = s.session.name;
 
   const post = () => {
-    if (hits.length > 0 || !title.trim() || body.trim().length < 10) return;
+    // Block only on "block" severity; "warn" terms display the banner but allow posting
+    if (postResult.overall === "block" || !title.trim() || body.trim().length < 10) return;
     const t: Thread = { id: uid(), author: me, hue: 25, title: title.trim(), body: body.trim(), tag, replies: [], ts: Date.now() };
     up(d => { d.community.unshift(t); });
     setTitle(""); setBody("");
     toast("Thread posted — clean draft, no flags", "ok");
   };
   const sendReply = (tid: string) => {
-    if (replyHits.length > 0 || !reply.trim()) return;
+    if (replyResult.overall === "block" || !reply.trim()) return;
     up(d => { const t = d.community.find(x => x.id === tid); if (t) t.replies.push({ id: uid(), author: me, body: reply.trim(), ts: Date.now() }); });
     setReply(""); setReplyFor(null);
     toast("Reply added", "ok");
@@ -82,18 +99,22 @@ export function CommunityView() {
           <aside className="sheet h-fit p-5 lg:sticky lg:top-4">
             <SectionHead title="Ask the room" />
             <label className="field-label" htmlFor="q-title">Title</label>
-            <input id="q-title" className={cn("input", screenText(title).length > 0 && "input-flagged")} placeholder="What are you stuck on?" value={title} onChange={e => setTitle(e.target.value)} />
+            <input id="q-title" className={cn("input", screenTextV2(title).hits.length > 0 && "input-flagged")} placeholder="What are you stuck on?" value={title} onChange={e => setTitle(e.target.value)} />
             <label className="field-label mt-3" htmlFor="q-body">Details</label>
-            <textarea id="q-body" className={cn("input min-h-[110px]", screenText(body).length > 0 && "input-flagged")} placeholder="Show your working so far…" value={body} onChange={e => setBody(e.target.value)} />
-            <KeystrokeBanner hits={hits} />
+            <textarea id="q-body" className={cn("input min-h-[110px]", screenTextV2(body).hits.length > 0 && "input-flagged")} placeholder="Show your working so far…" value={body} onChange={e => setBody(e.target.value)} />
+            <KeystrokeBanner result={postResult} />
             <label className="field-label mt-3" htmlFor="q-tag">Module tag</label>
             <select id="q-tag" className="input" value={tag} onChange={e => setTag(e.target.value)}>
               {["Numera", "Library", "Sandbox", "Workbench", "Study room", "Portfolio"].map(t => <option key={t}>{t}</option>)}
             </select>
-            <button className="btn btn-primary mt-4 w-full" disabled={hits.length > 0 || !title.trim() || body.trim().length < 10} onClick={post}>
-              <Send size={15} /> {hits.length > 0 ? "Blocked by charter filter" : "Post thread"}
+            <button className="btn btn-primary mt-4 w-full"
+              disabled={postResult.overall === "block" || !title.trim() || body.trim().length < 10}
+              onClick={post}>
+              <Send size={15} /> {postResult.overall === "block" ? "Blocked by charter filter" : "Post thread"}
             </button>
-            <p className="mt-2 text-center font-mono text-[10px]" style={{ color: "var(--text-500)" }}>filter runs on every keystroke · client-side only</p>
+            <p className="mt-2 text-center font-mono text-[10px]" style={{ color: "var(--text-500)" }}>
+              filter runs on every keystroke · client advisory · server verifies before persist
+            </p>
           </aside>
 
           {/* feed */}
@@ -124,10 +145,10 @@ export function CommunityView() {
                 <div className="mt-3">
                   {replyFor === t.id ? (
                     <div>
-                      <textarea className={cn("input min-h-[70px]", replyHits.length > 0 && "input-flagged")} aria-label="Reply text" placeholder="Reply with working, not verdicts…" value={reply} onChange={e => setReply(e.target.value)} autoFocus />
-                      <KeystrokeBanner hits={replyHits} />
+                      <textarea className={cn("input min-h-[70px]", replyResult.hits.length > 0 && "input-flagged")} aria-label="Reply text" placeholder="Reply with working, not verdicts…" value={reply} onChange={e => setReply(e.target.value)} autoFocus />
+                      <KeystrokeBanner result={replyResult} />
                       <div className="mt-2 flex gap-2">
-                        <button className="btn btn-primary btn-sm" disabled={replyHits.length > 0 || !reply.trim()} onClick={() => sendReply(t.id)}>Reply</button>
+                        <button className="btn btn-primary btn-sm" disabled={replyResult.overall === "block" || !reply.trim()} onClick={() => sendReply(t.id)}>Reply</button>
                         <button className="btn btn-sm" onClick={() => { setReplyFor(null); setReply(""); }}>Cancel</button>
                       </div>
                     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runProgram } from "@/engine/interpreter";
+import { runProgram, analyzeCode } from "@/engine/interpreter";
 
 const outText = (code: string) => runProgram(code).lines.filter(l => l.kind === "out").map(l => l.text);
 const errText = (code: string) => runProgram(code).lines.filter(l => l.kind === "err").map(l => l.text).join("\n");
@@ -149,3 +149,32 @@ describe("acad-vm: programs", () => {
     expect(runProgram(code).ok).toBe(false);
   });
 });
+
+describe("acad-vm: predictive static analyzer", () => {
+  it("detects unconditional infinite loops", () => {
+    const code = `while (true) {\n  console.log("spin");\n}`;
+    const diags = analyzeCode(code);
+    expect(diags.some(d => d.message.includes("Infinite loop"))).toBe(true);
+  });
+
+  it("detects unmutated loop condition variables", () => {
+    const code = `let i = 0;\nwhile (i < 10) {\n  console.log("loop");\n}`;
+    const diags = analyzeCode(code);
+    expect(diags.some(d => d.message.includes("never updated"))).toBe(true);
+  });
+
+  it("detects unclosed parentheses and braces", () => {
+    const diags1 = analyzeCode("let a = (2 + 3;");
+    expect(diags1.some(d => d.message.includes("parenthesis"))).toBe(true);
+
+    const diags2 = analyzeCode("if (1 == 1) {\n  console.log(1);");
+    expect(diags2.some(d => d.message.includes("block"))).toBe(true);
+  });
+
+  it("returns zero diagnostics for valid terminating programs", () => {
+    const code = `let i = 0;\nwhile (i < 5) {\n  console.log(i);\n  i = i + 1;\n}`;
+    const diags = analyzeCode(code);
+    expect(diags.filter(d => d.severity === "error")).toHaveLength(0);
+  });
+});
+
