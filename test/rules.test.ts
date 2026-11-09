@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { sm2, SM2_LABELS, screenText, customChatReply, tallyBudReply, adoroBuddyReply } from "@/engine/rules";
+import {
+  sm2,
+  SM2_LABELS,
+  screenText,
+  customChatReply,
+  tallyBudReply,
+  adoroBuddyReply,
+  numeraBudReply,
+  lockerGuardReply,
+  libraryBudReply,
+} from "@/engine/rules";
 import { seed, dayKey, type Flashcard } from "@/engine/store";
 
 const card = (over: Partial<Flashcard> = {}): Flashcard => ({
@@ -178,6 +188,108 @@ describe("Adoro Buddy", () => {
 
   it("falls back honestly", () => {
     expect(adoroBuddyReply("what is the meaning of life", s).fsm).toBe("FALLBACK");
+  });
+});
+
+describe("NumeraBud", () => {
+  const s = seed();
+
+  it("answers RREF algorithm queries", () => {
+    const r = numeraBudReply("explain RREF steps", s);
+    expect(r.rule).toBe("NUMERA/RREF_ALGORITHM");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers matrix determinant queries", () => {
+    const r = numeraBudReply("what is determinant and rank?", s);
+    expect(r.rule).toBe("NUMERA/MATRIX_PROPERTIES");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers derivative calculus queries", () => {
+    const r = numeraBudReply("how do I compute derivatives?", s);
+    expect(r.rule).toBe("NUMERA/CALCULUS_RULES");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers limits queries", () => {
+    const r = numeraBudReply("how to evaluate limits?", s);
+    expect(r.rule).toBe("NUMERA/LIMITS_EVALUATION");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("falls back cleanly on unmatched query", () => {
+    const r = numeraBudReply("unmatched query", s);
+    expect(r.fsm).toBe("FALLBACK");
+    expect(r.rule).toBe("NUMERA/NO_MATCH");
+  });
+});
+
+describe("LockerGuard", () => {
+  const s = seed();
+
+  it("answers vault status queries", () => {
+    const r = lockerGuardReply("what is my vault status?", s);
+    expect(r.rule).toBe("LOCKER/VAULT_STATUS");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers PBKDF2 iterations queries", () => {
+    const r = lockerGuardReply("how many pbkdf2 iterations are used?", s);
+    expect(r.rule).toBe("LOCKER/CRYPTO_SPEC");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers tamper integrity queries", () => {
+    const r = lockerGuardReply("check container integrity", s);
+    expect(r.rule).toBe("LOCKER/TAMPER_DETECTION");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers keypair export queries", () => {
+    const r = lockerGuardReply("how to export keypair backup?", s);
+    expect(r.rule).toBe("LOCKER/BACKUP_PROTOCOL");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("falls back cleanly", () => {
+    const r = lockerGuardReply("something random", s);
+    expect(r.fsm).toBe("FALLBACK");
+    expect(r.rule).toBe("LOCKER/NO_MATCH");
+  });
+});
+
+describe("LibraryBud", () => {
+  const s = seed();
+
+  it("answers due cards queries", () => {
+    const r = libraryBudReply("how many cards due today?", s);
+    expect(r.rule).toBe("LIBRARY/DUE_CARDS");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers SM-2 algorithm queries", () => {
+    const r = libraryBudReply("explain sm2 spacing formula", s);
+    expect(r.rule).toBe("LIBRARY/SM2_ALGORITHM");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers rating scale queries", () => {
+    const r = libraryBudReply("what do the rating buttons mean?", s);
+    expect(r.rule).toBe("LIBRARY/RATING_SCALE");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("answers margin notes queries", () => {
+    const r = libraryBudReply("how should I organize margin notes?", s);
+    expect(r.rule).toBe("LIBRARY/NOTE_METHODS");
+    expect(r.fsm).toBe("MATCHED");
+  });
+
+  it("falls back cleanly", () => {
+    const r = libraryBudReply("unrelated query", s);
+    expect(r.fsm).toBe("FALLBACK");
+    expect(r.rule).toBe("LIBRARY/NO_MATCH");
   });
 });
 

@@ -25,7 +25,7 @@ export class ErrorBoundary extends Component<Props, State> {
           </p>
           <p className="mt-3 break-all font-mono text-[11px]" style={{ color: "var(--text-500, #8a8172)" }}>{this.state.error.message}</p>
           <div className="mt-6 flex justify-center gap-3">
-            <button className="btn" onClick={() => { try { localStorage.removeItem(LS_KEY); localStorage.removeItem("academia-scratch-html"); } catch { /* ignore */ } window.location.reload(); }}>
+            <button className="btn" onClick={() => { try { localStorage.removeItem(LS_KEY); localStorage.removeItem("academia-scratch-html"); localStorage.removeItem("academia-tutor-cfg"); localStorage.removeItem("academia-tutor-key"); } catch { /* ignore */ } window.location.reload(); }}>
               Reset local data
             </button>
             <button className="btn btn-primary" onClick={() => window.location.reload()}>Reload</button>

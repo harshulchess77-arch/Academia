@@ -111,110 +111,118 @@ export function TallyView() {
             </tr>
           </thead>
           <tbody>
-            {s.grades.map(g => {
-              const req = requiredScore(g);
-              const impossible = req !== null && req > 100;
-              const secured = req !== null && req <= 0;
-              const currentTier = g.tier ?? "standard";
+            {s.grades.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="py-8 text-center text-sm" style={{ color: "var(--text-400)" }}>
+                  No courses enrolled yet. Click "Add Course" below to start your credit ledger.
+                </td>
+              </tr>
+            ) : (
+              s.grades.map(g => {
+                const req = requiredScore(g);
+                const impossible = req !== null && req > 100;
+                const secured = req !== null && req <= 0;
+                const currentTier = g.tier ?? "standard";
 
-              return (
-                <tr key={g.id}>
-                  <td className="font-bold">{g.name}</td>
-                  <td>
-                    <select
-                      className="input !min-h-[34px] !w-32 !px-2 !py-1 font-mono !text-xs"
-                      value={currentTier}
-                      aria-label={`${g.name} weighting tier`}
-                      onChange={e => setField(g.id, { tier: e.target.value as CourseWeightTier })}
-                    >
-                      {TIERS.map(t => (
-                        <option key={t.key} value={t.key}>
-                          {t.label} ({t.bump})
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <select
-                      className="input !min-h-[34px] !w-16 !px-2 !py-1 font-mono !text-xs"
-                      value={g.credits}
-                      aria-label={`${g.name} credits`}
-                      onChange={e => setField(g.id, { credits: Number(e.target.value) })}
-                    >
-                      {[1, 2, 3, 4, 5, 6].map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    <div className="flex items-center gap-2">
+                return (
+                  <tr key={g.id}>
+                    <td className="font-bold">{g.name}</td>
+                    <td>
+                      <select
+                        className="input !min-h-[34px] !w-32 !px-2 !py-1 font-mono !text-xs"
+                        value={currentTier}
+                        aria-label={`${g.name} weighting tier`}
+                        onChange={e => setField(g.id, { tier: e.target.value as CourseWeightTier })}
+                      >
+                        {TIERS.map(t => (
+                          <option key={t.key} value={t.key}>
+                            {t.label} ({t.bump})
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        className="input !min-h-[34px] !w-16 !px-2 !py-1 font-mono !text-xs"
+                        value={g.credits}
+                        aria-label={`${g.name} credits`}
+                        onChange={e => setField(g.id, { credits: Number(e.target.value) })}
+                      >
+                        {[1, 2, 3, 4, 5, 6].map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          className="input !min-h-[34px] !w-20 !px-2 !py-1 font-mono !text-xs"
+                          value={g.score}
+                          aria-label={`${g.name} current score`}
+                          onChange={e => setField(g.id, { score: Math.max(0, Math.min(100, Number(e.target.value))) })}
+                        />
+                        <span className="font-mono text-xs">%</span>
+                      </div>
+                    </td>
+                    <td className="min-w-[130px]">
                       <input
-                        type="number"
+                        type="range"
+                        className="range"
                         min={0}
                         max={100}
-                        className="input !min-h-[34px] !w-20 !px-2 !py-1 font-mono !text-xs"
-                        value={g.score}
-                        aria-label={`${g.name} current score`}
-                        onChange={e => setField(g.id, { score: Math.max(0, Math.min(100, Number(e.target.value))) })}
+                        step={5}
+                        value={g.done}
+                        aria-label={`${g.name} percent of coursework done`}
+                        onChange={e => setField(g.id, { done: Number(e.target.value) })}
                       />
-                      <span className="font-mono text-xs">%</span>
-                    </div>
-                  </td>
-                  <td className="min-w-[130px]">
-                    <input
-                      type="range"
-                      className="range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={g.done}
-                      aria-label={`${g.name} percent of coursework done`}
-                      onChange={e => setField(g.id, { done: Number(e.target.value) })}
-                    />
-                    <span className="font-mono text-[10px]" style={{ color: "var(--text-500)" }}>{g.done}% graded</span>
-                  </td>
-                  <td className="min-w-[130px]">
-                    <input
-                      type="range"
-                      className="range"
-                      min={50}
-                      max={100}
-                      value={g.target}
-                      aria-label={`${g.name} target score`}
-                      onChange={e => setField(g.id, { target: Number(e.target.value) })}
-                    />
-                    <span className="font-mono text-[10px]" style={{ color: "var(--text-500)" }}>→ {g.target}%</span>
-                  </td>
-                  <td>
-                    {req === null ? (
-                      <Pill tone="forest">Complete</Pill>
-                    ) : secured ? (
-                      <Pill tone="forest">Target secured ✓</Pill>
-                    ) : impossible ? (
-                      <Pill tone="accent">Not reachable (&gt;100%)</Pill>
-                    ) : (
-                      <span
-                        className="pill quota-pill"
-                        style={{
-                          background: req > 90 ? "var(--marigold-100)" : "var(--forest-100)",
-                          borderColor: req > 90 ? "var(--marigold-900)" : "var(--forest-500)",
-                        }}
+                      <span className="font-mono text-[10px]" style={{ color: "var(--text-500)" }}>{g.done}% graded</span>
+                    </td>
+                    <td className="min-w-[130px]">
+                      <input
+                        type="range"
+                        className="range"
+                        min={50}
+                        max={100}
+                        value={g.target}
+                        aria-label={`${g.name} target score`}
+                        onChange={e => setField(g.id, { target: Number(e.target.value) })}
+                      />
+                      <span className="font-mono text-[10px]" style={{ color: "var(--text-500)" }}>→ {g.target}%</span>
+                    </td>
+                    <td>
+                      {req === null ? (
+                        <Pill tone="forest">Complete</Pill>
+                      ) : secured ? (
+                        <Pill tone="forest">Target secured ✓</Pill>
+                      ) : impossible ? (
+                        <Pill tone="accent">Not reachable (&gt;100%)</Pill>
+                      ) : (
+                        <span
+                          className="pill quota-pill"
+                          style={{
+                            background: req > 90 ? "var(--marigold-100)" : "var(--forest-100)",
+                            borderColor: req > 90 ? "var(--marigold-900)" : "var(--forest-500)",
+                          }}
+                        >
+                          {fmt(req, 4)}% needed
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-ghost btn-icon btn-sm"
+                        aria-label={`Remove ${g.name}`}
+                        style={{ color: "var(--accent-600)" }}
+                        onClick={() => remove(g)}
                       >
-                        {fmt(req, 4)}% needed
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <button
-                      className="btn btn-ghost btn-icon btn-sm"
-                      aria-label={`Remove ${g.name}`}
-                      style={{ color: "var(--accent-600)" }}
-                      onClick={() => remove(g)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </section>
@@ -254,54 +262,60 @@ export function TallyView() {
           Real-time trajectory analysis calculating the precise average grade threshold required on future assignments to hit each course's target milestone:
         </p>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {s.grades.map(g => {
-            const forecast = forecastMilestones(g);
-            return (
-              <div
-                key={g.id}
-                className="rounded-xl border-2 p-3 space-y-2"
-                style={{
-                  borderColor: forecast.status === "impossible"
-                    ? "var(--accent-600)"
-                    : forecast.status === "critical"
-                    ? "var(--marigold-900)"
-                    : "var(--background-300)",
-                  background: "var(--background-50)",
-                }}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-display font-bold text-sm">{g.name}</span>
-                  {forecast.status === "secured" || forecast.status === "complete" ? (
-                    <Pill tone="forest">Secured</Pill>
-                  ) : forecast.status === "impossible" ? (
-                    <Pill tone="accent">At Risk</Pill>
-                  ) : forecast.status === "critical" ? (
-                    <Pill tone="marigold">Critical</Pill>
-                  ) : (
-                    <Pill tone="cobalt">On Track</Pill>
-                  )}
+        {s.grades.length === 0 ? (
+          <p className="text-center py-6 text-sm" style={{ color: "var(--text-400)" }}>
+            Add courses above to unlock automated trajectory forecasts and milestone goal calculations.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {s.grades.map(g => {
+              const forecast = forecastMilestones(g);
+              return (
+                <div
+                  key={g.id}
+                  className="rounded-xl border-2 p-3 space-y-2"
+                  style={{
+                    borderColor: forecast.status === "impossible"
+                      ? "var(--accent-600)"
+                      : forecast.status === "critical"
+                      ? "var(--marigold-900)"
+                      : "var(--background-300)",
+                    background: "var(--background-50)",
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-display font-bold text-sm">{g.name}</span>
+                    {forecast.status === "secured" || forecast.status === "complete" ? (
+                      <Pill tone="forest">Secured</Pill>
+                    ) : forecast.status === "impossible" ? (
+                      <Pill tone="accent">At Risk</Pill>
+                    ) : forecast.status === "critical" ? (
+                      <Pill tone="marigold">Critical</Pill>
+                    ) : (
+                      <Pill tone="cobalt">On Track</Pill>
+                    )}
+                  </div>
+                  <div className="flex justify-between font-mono text-[11px]" style={{ color: "var(--text-500)" }}>
+                    <span>Current: {g.score}%</span>
+                    <span>Target: {g.target}%</span>
+                  </div>
+                  <div className="gantt-track !h-2">
+                    <div
+                      className="gantt-bar"
+                      style={{
+                        width: `${g.done}%`,
+                        background: forecast.feasible ? "var(--forest-500)" : "var(--accent-500)",
+                      }}
+                    />
+                  </div>
+                  <p className="text-[11px] leading-snug" style={{ color: "var(--text-700)" }}>
+                    {forecast.perAssignmentAdvice}
+                  </p>
                 </div>
-                <div className="flex justify-between font-mono text-[11px]" style={{ color: "var(--text-500)" }}>
-                  <span>Current: {g.score}%</span>
-                  <span>Target: {g.target}%</span>
-                </div>
-                <div className="gantt-track !h-2">
-                  <div
-                    className="gantt-bar"
-                    style={{
-                      width: `${g.done}%`,
-                      background: forecast.feasible ? "var(--forest-500)" : "var(--accent-500)",
-                    }}
-                  />
-                </div>
-                <p className="text-[11px] leading-snug" style={{ color: "var(--text-700)" }}>
-                  {forecast.perAssignmentAdvice}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );

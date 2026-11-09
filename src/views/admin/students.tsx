@@ -1,7 +1,7 @@
 /* Academia · Phase 4.2 — high-density directory with PROFILE / WARNING / USAGE 3-dot menu */
 import { useEffect, useRef, useState } from "react";
 import { Ban, ChevronRight, Eye, MoreHorizontal, Search, ShieldAlert, Timer, X, Zap } from "lucide-react";
-import { useApp, uid, type StudentRow, type AccountStatus } from "@/engine/store";
+import { useApp, uid, fmtTime, type StudentRow, type AccountStatus } from "@/engine/store";
 import { useModal } from "@/engine/modal";
 import { navigate } from "@/engine/router";
 import { Avatar, PageHeader, Pill, SectionHead, TierPill } from "@/components/ui";
@@ -37,16 +37,21 @@ export function AdminStudentsView() {
     .filter(st => status === "All" || st.status === status)
     .sort((a, b) => sort === "Name" ? a.name.localeCompare(b.name) : sort === "Flags" ? b.flags - a.flags : a.quotaHealth.localeCompare(b.quotaHealth));
 
+  const isCurrentStudent = (st: StudentRow) =>
+    (Boolean(s.session.email) && st.email.toLowerCase() === s.session.email.toLowerCase()) ||
+    (Boolean(s.session.name) && st.name.toLowerCase() === s.session.name.toLowerCase());
+
   const applyUsage = (st: StudentRow, next: AccountStatus, hours?: number) => {
     const until = hours ? Date.now() + hours * 3600e3 : undefined;
+    const isTargetingCurrent = isCurrentStudent(st);
     up(d => {
       const row = d.admin.students.find(x => x.id === st.id);
       if (row) {
         row.status = next; row.until = until;
-        row.logs.unshift(`${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} · Usage → ${next}${hours ? ` (${hours}h)` : ""}`);
+        row.logs.unshift(`${fmtTime(Date.now(), { hour: "2-digit", minute: "2-digit" })} · Usage → ${next}${hours ? ` (${hours}h)` : ""}`);
       }
       // governance acts on the live session FSM when targeting the signed-in account
-      if (st.id === "st1") {
+      if (isTargetingCurrent) {
         d.session.status = next;
         d.session.inactiveUntil = until;
       }
@@ -55,7 +60,7 @@ export function AdminStudentsView() {
     if (next === "BAN") toast(`${st.name}: session revoked · ACCOUNT_BANNED`, "err");
     else if (next === "INACTIVE") toast(`${st.name}: access paused ${hours}h — timer running`, "warn");
     else toast(`${st.name}: full access restored`, "ok");
-    if (st.id === "st1" && next !== "ACTIVE") navigate(next === "BAN" ? "/banned" : "/inactive");
+    if (isTargetingCurrent && next !== "ACTIVE") navigate(next === "BAN" ? "/banned" : "/inactive");
   };
 
   const usagePick = (st: StudentRow, target: AccountStatus) => {
@@ -115,7 +120,7 @@ export function AdminStudentsView() {
           up(d => {
             d.admin.warnings.unshift({ id: uid(), student: st.name, reason: reason.trim(), ts: Date.now() });
             const row = d.admin.students.find(x => x.id === st.id);
-            if (row) { row.flags += 1; row.logs.unshift(`${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} · Warning issued: ${reason.trim().slice(0, 40)}…`); }
+            if (row) { row.flags += 1; row.logs.unshift(`${fmtTime(Date.now(), { hour: "2-digit", minute: "2-digit" })} · Warning issued: ${reason.trim().slice(0, 40)}…`); }
           });
           close();
           toast(`Warning delivered to ${st.name} · email queued`, "ok");
@@ -160,7 +165,7 @@ export function AdminStudentsView() {
                   <div className="flex items-center gap-2.5">
                     <Avatar name={st.name} hue={st.name.length * 31 % 360} size={32} />
                     <div>
-                      <p className="font-bold">{st.name}{st.id === "st1" && <span className="ml-1.5 font-mono text-[9px]" style={{ color: "var(--cobalt-600)" }}>(session)</span>}</p>
+                      <p className="font-bold">{st.name}{isCurrentStudent(st) && <span className="ml-1.5 font-mono text-[9px]" style={{ color: "var(--cobalt-600)" }}>(session)</span>}</p>
                       <p className="text-[11px]" style={{ color: "var(--text-500)" }}>{st.email}</p>
                     </div>
                   </div>

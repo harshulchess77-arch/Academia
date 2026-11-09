@@ -46,7 +46,7 @@ export function CrdtSyncBar() {
           : <CloudOff size={13} style={{ color: "var(--accent-600)" }} />}
         <span className="font-mono text-[11px] font-semibold">
           {effectiveOnline
-            ? (flushing ? `merging ${pending} op${pending === 1 ? "" : "s"}…` : pending ? `${pending} op${pending === 1 ? "" : "s"} queued` : "IndexedDB · synced")
+            ? (flushing ? `merging ${pending} op${pending === 1 ? "" : "s"}…` : pending ? `${pending} op${pending === 1 ? "" : "s"} queued` : "Local storage · synced")
             : `offline · ${pending} op${pending === 1 ? "" : "s"} held locally`}
         </span>
         <span className="inline-block h-2 w-2 rounded-full" style={{ background: effectiveOnline ? "var(--forest-500)" : "var(--accent-500)" }} />

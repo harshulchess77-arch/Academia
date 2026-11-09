@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, History, Play, SquareTerminal, AlertTriangle, XCircle, ShieldCheck } from "lucide-react";
-import { useApp, spendQuota, uid, fmtDate } from "@/engine/store";
+import { useApp, spendQuota, uid, fmtDate, fmtTime } from "@/engine/store";
 import { runProgram, analyzeCode, type RunResult, type CodeDiagnostic } from "@/engine/interpreter";
 import { PageHeader, QuotaPills, Toggle } from "@/components/ui";
 
@@ -38,7 +38,7 @@ export function SandboxView() {
     if (autoSnapRef.current) clearTimeout(autoSnapRef.current);
     autoSnapRef.current = setTimeout(() => {
       if (!code.trim() || s.sandbox.snapshots.some(sn => sn.code === code)) return;
-      const timeStr = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+      const timeStr = fmtTime(Date.now(), { hour: "2-digit", minute: "2-digit" });
       const autoSnap = {
         id: uid(),
         label: `Auto-save · ${timeStr}`,
@@ -92,7 +92,7 @@ export function SandboxView() {
   };
 
   const saveSnapshot = () => {
-    const label = `Manual Snapshot · ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`;
+    const label = `Manual Snapshot · ${fmtTime(Date.now(), { hour: "2-digit", minute: "2-digit" })}`;
     up(d => {
       d.sandbox.snapshots.unshift({ id: uid(), label, code, ts: Date.now() });
     });

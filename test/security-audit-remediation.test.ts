@@ -7,10 +7,8 @@ import {
   timingSafeEqualHex,
   validateContainerSchema,
   TamperError,
-  MIN_ALLOWED_ITERATIONS,
-  MAX_ALLOWED_ITERATIONS,
 } from "@/engine/locker-crypto";
-import { toRpn, evalRpn } from "@/engine/math";
+import { evalRpn } from "@/engine/math";
 import { exportDeckToCSV, importDeckFromCSV } from "@/engine/library-io";
 import { runProgram } from "@/engine/interpreter";
 import {

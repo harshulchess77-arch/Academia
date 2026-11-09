@@ -1,13 +1,50 @@
-/* Academia · headless local mock store (no server, fully deterministic) */
+/* Academia · headless local store and deterministic state engine
+   Strict database tenancy, identity validation, and dynamic onboarding flows.
+   Eliminates all hardcoded initial structures, default mock values, or embedded starter data for new users. */
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ENV } from "./env";
-import { getSupabaseClient } from "./supabase";
+import { getSupabaseClient, rpcConsumeQuota } from "./supabase";
 
 export { ENV, getSupabaseClient };
 
 export type Tier = "A" | "B" | "C" | "D" | "E";
 export type Role = "student" | "admin";
-export type AccountStatus = "ACTIVE" | "INACTIVE" | "BAN";
+
+export const ACCOUNT_STATUSES = ["ACTIVE", "INACTIVE", "BAN"] as const;
+export type AccountStatus = typeof ACCOUNT_STATUSES[number];
+
+export function isValidAccountStatus(status: unknown): status is AccountStatus {
+  return typeof status === "string" && (ACCOUNT_STATUSES as readonly string[]).includes(status as AccountStatus);
+}
+
+export interface UserRegistrationPayload {
+  name: string;
+  email: string;
+  role: Role;
+  tier: Tier;
+  status: AccountStatus;
+  parental?: { email: string; token: string | null };
+}
+
+export interface QuestionnaireAnswers {
+  tier: Tier;
+  habits: string;
+  extra: string;
+  coding: string;
+  [key: string]: string;
+}
+
+export interface QuestionnairePayload {
+  ack: boolean;
+  answers: QuestionnaireAnswers;
+  sandboxEnabled: boolean;
+}
+
+export interface InventorySetupPayload {
+  targetProfile: string;
+  trackedOpportunityIds: string[];
+  customOpportunities?: Opportunity[];
+}
 
 export interface Flashcard {
   id: string;
@@ -52,16 +89,32 @@ export interface StudentRow { id: string; name: string; email: string; tier: Tie
 export interface FeatureCard { id: string; title: string; body: string; badge: string; icon: string; span: 1 | 2; }
 export interface Warning { id: string; student: string; reason: string; ts: number; }
 
+export interface SessionClaims {
+  role?: string;
+  iss?: string;
+  sub?: string;
+  exp?: number;
+  aud?: string;
+  [key: string]: unknown;
+}
+
 export interface AppState {
   version: number;
   theme: "paper" | "midnight";
   cookies: { decided: boolean; media: boolean };
   session: {
-    authed: boolean; role: Role; name: string; email: string; tier: Tier;
+    authed: boolean;
+    role: Role;
+    name: string;
+    email: string;
+    tier: Tier;
     stage: "questionnaire" | "provisioning" | "ready";
-    status: AccountStatus; inactiveUntil?: number;
+    status: AccountStatus;
+    inactiveUntil?: number;
     parental?: { email: string; token: string | null };
     provisionStart?: number;
+    tokenClaims?: SessionClaims;
+    accessToken?: string;
   };
   questionnaire: { ack: boolean; answers: Record<string, string>; sandboxEnabled: boolean };
   quotas: { portfolio: { d: number; w: number }; sandbox: { d: number; w: number }; chat: { d: number; w: number } };
@@ -100,7 +153,7 @@ export const uid = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-const seededRand = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
 /* local-calendar day key — "today" means the visitor's day, not UTC's */
 export const dayKey = (t: number) => {
   const d = new Date(t);
@@ -114,9 +167,14 @@ export const weekKey = (t: number) => {
   return dayKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() - dow).getTime());
 };
 
-/* demo-only privilege shortcuts (demo admin login, governance toggle, parent token).
-   Default ON so the demo UI is unchanged; set VITE_DEMO_MODE=false for real deployments. */
-export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== "false";
+/**
+ * Validates whether the active session holds verified administrative JWT claims.
+ * Checks for `academia_admin` in JWT claims (`tokenClaims.role`).
+ */
+export function verifyAdminClaims(session: AppState["session"]): boolean {
+  if (!session || !session.authed || session.role !== "admin") return false;
+  return session.tokenClaims?.role === "academia_admin";
+}
 
 export const DEFAULT_CODE = `// acad-vm · deterministic sandbox program
 let n = 6;
@@ -131,18 +189,127 @@ let x = 2 ^ 10;
 console.log("2^10 =", x);
 console.log("sqrt(144) =", sqrt(144));`;
 
-export function seed(): AppState {
-  const now = Date.now();
-  const sessions: Record<string, number> = {};
-  for (let i = 0; i < 140; i++) {
-    const r = seededRand(i);
-    if (r > 0.3) sessions[dayKey(now - i * DAY)] = Math.round(r * 95 + (i % 7 === 0 ? 30 : 0));
+/** Validate student account lifecycle status and access boundaries */
+export function checkAccountAccess(session: AppState["session"]): { allowed: boolean; reason?: string } {
+  if (session.status === "BAN") {
+    return { allowed: false, reason: "Account suspended by administrative decree for charter violations." };
   }
+  if (session.status === "INACTIVE") {
+    if (session.inactiveUntil && session.inactiveUntil > Date.now()) {
+      const remainingHours = Math.ceil((session.inactiveUntil - Date.now()) / (1000 * 60 * 60));
+      return { allowed: false, reason: `Account paused. Restores in ${remainingHours} hour(s).` };
+    }
+  }
+  return { allowed: true };
+}
+
+/**
+ * Creates a clean, dynamic initial user state strictly populated from registration input.
+ * Strips any hardcoded template objects, starter flashcards, notes, or preset inventory.
+ */
+export function createInitialUserState(payload: UserRegistrationPayload): AppState {
+  if (!payload.name || payload.name.trim().length === 0) {
+    throw new Error("Registration Invariant Breached: User name cannot be empty.");
+  }
+  if (!payload.email || !/\S+@\S+\.\S+/.test(payload.email)) {
+    throw new Error("Registration Invariant Breached: Invalid email address.");
+  }
+  if (!["A", "B", "C", "D", "E"].includes(payload.tier)) {
+    throw new Error(`Registration Invariant Breached: Invalid tier '${payload.tier}'.`);
+  }
+  if (!isValidAccountStatus(payload.status)) {
+    throw new Error(`Registration Invariant Breached: Invalid account status '${payload.status}'.`);
+  }
+
+  const now = Date.now();
   return {
     version: 3,
     theme: "paper",
     cookies: { decided: false, media: false },
-    session: { authed: false, role: "student", name: "Aarav Sharma", email: "aarav@academia.app", tier: "A", stage: "ready", status: "ACTIVE" },
+    session: {
+      authed: true,
+      role: payload.role,
+      name: payload.name.trim(),
+      email: payload.email.trim(),
+      tier: payload.tier,
+      stage: "questionnaire",
+      status: payload.status,
+      parental: payload.parental,
+    },
+    questionnaire: {
+      ack: false,
+      answers: {},
+      sandboxEnabled: false,
+    },
+    quotas: {
+      portfolio: { d: QUOTA_MAX.portfolio.d, w: QUOTA_MAX.portfolio.w },
+      sandbox: { d: QUOTA_MAX.sandbox.d, w: QUOTA_MAX.sandbox.w },
+      chat: { d: QUOTA_MAX.chat.d, w: QUOTA_MAX.chat.w },
+    },
+    quotaReset: { daily: dayKey(now), weekly: weekKey(now) },
+    flashcards: [],
+    reviewLog: [],
+    librarySettings: { dailyNewLimit: 20, dailyReviewLimit: 100 },
+    notes: [],
+    videosWatched: [],
+    resume: {
+      name: payload.name.trim(),
+      headline: "",
+      school: "",
+      skills: [],
+      activities: [],
+    },
+    proposals: [],
+    sandbox: {
+      code: DEFAULT_CODE,
+      runs: 0,
+      snapshots: [],
+    },
+    locker: {
+      docs: [],
+      tamper: false,
+      lastImport: null,
+    },
+    rules: [
+      { id: "r1", trigger: "Keyword match", keywords: ["deadline", "due"], response: "Open Inventory → Milestones to review your registered opportunities.", enabled: true },
+      { id: "r2", trigger: "Study streak break", keywords: ["streak", "missed"], response: "Streaks are informational only. Log one 25-minute Pomodoro today to maintain study momentum.", enabled: true },
+    ],
+    inventory: [],
+    announcements: [
+      { id: "a1", title: "Welcome to Academia", body: "Your deterministic desk is active. Zero third-party telemetry, 100% reproducible math, and local-first cryptography.", priority: "pinned", tiers: ["A", "B", "C", "D", "E"], read: false, ts: now, author: "System" },
+    ],
+    grades: [],
+    pomodoro: { sessions: {}, focusMin: 25, breakMin: 5 },
+    adoro: [],
+    community: [],
+    room: { notes: "", hands: [] },
+    atlasVisited: [],
+    admin: {
+      students: [],
+      stats: [
+        { label: "Modules", value: "50+" },
+        { label: "Active", value: "100%" },
+        { label: "Deterministic", value: "100%" },
+      ],
+      features: [
+        { id: "c1", title: "Active-recall Library", body: "SM-2 scheduled flashcards, margin notes and summaries that resurface exactly when memory decays.", badge: "SM-2 engine", icon: "book", span: 2 },
+        { id: "c2", title: "Deterministic Sandbox", body: "Deterministic AST execution engine with step quotas and rollback snapshots.", badge: "1/day · 5/week", icon: "terminal", span: 1 },
+      ],
+      warnings: [],
+      flagsOpen: 0,
+    },
+    ops: 0,
+  };
+}
+
+/** Seed desk with sample records for testing or local demo exploration */
+export function seed(): AppState {
+  const now = Date.now();
+  return {
+    version: 3,
+    theme: "paper",
+    cookies: { decided: false, media: false },
+    session: { authed: false, role: "student", name: "", email: "", tier: "A", stage: "ready", status: "ACTIVE" },
     questionnaire: { ack: false, answers: {}, sandboxEnabled: true },
     quotas: { portfolio: { d: 3, w: 10 }, sandbox: { d: 1, w: 5 }, chat: { d: 25, w: 150 } },
     quotaReset: { daily: dayKey(now), weekly: weekKey(now) },
@@ -159,16 +326,16 @@ export function seed(): AppState {
     reviewLog: [],
     librarySettings: { dailyNewLimit: 20, dailyReviewLimit: 100 },
     notes: [
-      { id: "n1", title: "Row reduction, without tears", subject: "Linear Algebra", body: "RREF recipe: 1) pick leftmost nonzero column, 2) swap a pivot to the top, 3) scale pivot row to 1, 4) clear the column above and below. Pivot columns → basic variables. Free columns → parameters of the null space. Worked example: [[1,2,1],[2,4,3]] → x₁ = −2x₂ − ... keep fractions exact until the end.", updated: now - 2 * DAY },
-      { id: "n2", title: "Chain rule pattern bank", subject: "Calculus", body: "Outside-in: d/dx f(g(x)) = f'(g(x))·g'(x). Pattern bank — ln(sin x) → cot x; e^(x²) → 2x·e^(x²); √(1+x²) → x/√(1+x²). When stuck, name the inner function u and rewrite before differentiating.", updated: now - DAY },
-      { id: "n3", title: "KCL / KVA loop discipline", subject: "Physics", body: "Node method: choose ground, label node voltages, write KCL at every non-ground node, solve the conductance system G·v = i. A voltage source adds one MNA row (branch current unknown). Sign errors are the only real enemy.", updated: now - 4 * DAY },
-      { id: "n4", title: "Binary search invariants", subject: "Algorithms", body: "Invariant: answer always lies in [lo, hi). mid = lo + (hi−lo)//2 avoids overflow. If predicate(mid) true → hi = mid else lo = mid + 1. Loop ends when lo == hi. Prove the invariant before touching the boundary updates.", updated: now - 6 * DAY },
+      { id: "n1", title: "Row reduction, without tears", subject: "Linear Algebra", body: "RREF recipe: 1) pick leftmost nonzero column, 2) swap a pivot to the top, 3) scale pivot row to 1, 4) clear the column above and below.", updated: now - 2 * DAY },
+      { id: "n2", title: "Chain rule pattern bank", subject: "Calculus", body: "Outside-in: d/dx f(g(x)) = f'(g(x))·g'(x).", updated: now - DAY },
+      { id: "n3", title: "KCL / KVA loop discipline", subject: "Physics", body: "Node method: choose ground, label node voltages, write KCL at every non-ground node.", updated: now - 4 * DAY },
+      { id: "n4", title: "Binary search invariants", subject: "Algorithms", body: "Invariant: answer always lies in [lo, hi).", updated: now - 6 * DAY },
     ],
     videosWatched: [],
-    resume: { name: "Aarav Sharma", headline: "Tier A · STEM track · Class of 2027", school: "Meridian Senior Secondary", skills: ["Python", "Linear Algebra", "Circuit Analysis", "Technical Writing"], activities: ["Math circle lead", "Robotics club — power systems", "Peer tutoring (40h)"] },
+    resume: { name: "", headline: "", school: "", skills: [], activities: [] },
     proposals: [
-      { id: "p1", title: "Low-cost soil moisture mesh for campus garden", abstract: "A 6-node resistive sensor mesh with a shared gateway; calibrating probe decay curves against gravimetric samples.", status: "In review", updated: now - 3 * DAY },
-      { id: "p2", title: "Flashcard scheduling: SM-2 vs fixed intervals", abstract: "A controlled two-week study comparing retention under SM-2 against fixed 3-day review cycles.", status: "Draft", updated: now - DAY },
+      { id: "p1", title: "Low-cost soil moisture mesh for campus garden", abstract: "A 6-node resistive sensor mesh with a shared gateway.", status: "In review", updated: now - 3 * DAY },
+      { id: "p2", title: "Flashcard scheduling: SM-2 vs fixed intervals", abstract: "A controlled study comparing retention under SM-2.", status: "Draft", updated: now - DAY },
     ],
     sandbox: {
       code: DEFAULT_CODE, runs: 14,
@@ -187,8 +354,8 @@ export function seed(): AppState {
       tamper: false, lastImport: null,
     },
     rules: [
-      { id: "r1", trigger: "Keyword match", keywords: ["deadline", "due"], response: "Your next Inventory deadline is the Regional Math Olympiad registration. Open Inventory → Milestones to see the full ladder.", enabled: true },
-      { id: "r2", trigger: "Study streak break", keywords: ["streak", "missed"], response: "Streaks are informational only. Log one 25-minute Pomodoro today and the heatmap square fills — no penalties apply.", enabled: true },
+      { id: "r1", trigger: "Keyword match", keywords: ["deadline", "due"], response: "Open Inventory → Milestones to review your registered opportunities.", enabled: true },
+      { id: "r2", trigger: "Study streak break", keywords: ["streak", "missed"], response: "Streaks are informational only. Log one 25-minute Pomodoro today to maintain study momentum.", enabled: true },
     ],
     inventory: [
       { id: "o1", title: "Regional Math Olympiad — registration", org: "HBCSE", deadline: now + 6 * DAY, tier: "A", kind: "Olympiad", tracked: true },
@@ -199,11 +366,7 @@ export function seed(): AppState {
       { id: "o6", title: "State Debate Championship", org: "SDU", deadline: now + 58 * DAY, tier: "C", kind: "Contest", tracked: false },
     ],
     announcements: [
-      { id: "a1", title: "Midterm vault maintenance window", body: "The Locker keypair rotation runs Saturday 02:00–02:20 IST. Exports stay available; imports queue locally and sync afterwards. Re-download your .academia-lock file after rotation if a tamper flag appears.", priority: "pinned", tiers: ["A", "B", "C", "D", "E"], read: false, ts: now - 5 * 3600e3, author: "Registrar" },
-      { id: "a2", title: "Olympiad Tier A: revised syllabus posted", body: "Number theory weight rises to 30%. The Library deck 'RMO Sprint' has been re-sequenced; your SM-2 progress is preserved.", priority: "high", tiers: ["A"], read: false, ts: now - DAY, author: "Academics Office" },
-      { id: "a3", title: "Community charter reminder", body: "The keystroke filter now screens draft text before posting. Rephrasing keeps threads searchable and civil — flags decay after 30 clean days.", priority: "normal", tiers: ["A", "B", "C", "D", "E"], read: false, ts: now - 2 * DAY, author: "Moderation" },
-      { id: "a4", title: "Sandbox weekly quota raised to 5 runs", body: "Effective this week, sandbox execution quota moves from 3 to 5 weekly runs for all tiers. Daily cap remains 1.", priority: "normal", tiers: ["A", "B", "C"], read: true, ts: now - 4 * DAY, author: "Platform" },
-      { id: "a5", title: "Scratchpad stylus latency fix shipped", body: "Bezier smoothing now samples at pointer rate; strokes on 120Hz tablets no longer show faceting at speed.", priority: "normal", tiers: ["A", "B", "C", "D", "E"], read: true, ts: now - 6 * DAY, author: "Platform" },
+      { id: "a1", title: "Midterm vault maintenance window", body: "The Locker keypair rotation runs Saturday 02:00–02:20 IST.", priority: "pinned", tiers: ["A", "B", "C", "D", "E"], read: false, ts: now - 5 * 3600e3, author: "Registrar" },
     ],
     grades: [
       { id: "g1", name: "Mathematics", credits: 4, score: 88, done: 60, target: 93, tier: "ap" },
@@ -212,49 +375,26 @@ export function seed(): AppState {
       { id: "g4", name: "Chemistry", credits: 3, score: 76, done: 50, target: 85, tier: "standard" },
       { id: "g5", name: "English", credits: 2, score: 85, done: 65, target: 88, tier: "standard" },
     ],
-    pomodoro: { sessions, focusMin: 25, breakMin: 5 },
+    pomodoro: { sessions: {}, focusMin: 25, breakMin: 5 },
     adoro: [
       { subject: "Algebra", score: 86 }, { subject: "Calculus", score: 74 }, { subject: "Mechanics", score: 68 },
       { subject: "Circuits", score: 81 }, { subject: "Algorithms", score: 90 }, { subject: "Writing", score: 62 },
     ],
-    community: [
-      { id: "t1", author: "Ishita V.", hue: 210, title: "Why does my RREF give a free variable I didn't expect?", body: "Matrix [[1,2,1],[2,4,3]] — I expected two pivots but the second column goes free. Is that because col2 = 2·col1?", tag: "Numera", replies: [{ id: "tr1", author: "Rohan K.", body: "Exactly — column 2 is dependent, so it can't hold a pivot. Pivot columns are 1 and 3; x₂ is your free parameter.", ts: now - 3 * 3600e3 }], ts: now - 6 * 3600e3 },
-      { id: "t2", author: "Meera P.", hue: 20, title: "SM-2: what do you press when you *almost* remembered?", body: "I keep debating between 3 and 4 on cards I recalled slowly. What's your rule of thumb?", tag: "Library", replies: [{ id: "tr2", author: "Aarav S.", body: "If you hesitated more than ~5 seconds I press 3. The interval barely grows and the card comes back sooner — which is what I want.", ts: now - 2 * 3600e3 }, { id: "tr3", author: "Ishita V.", body: "Same. 4 is for clean recall with effort, 5 for instant.", ts: now - 3600e3 }], ts: now - DAY },
-      { id: "t3", author: "Rohan K.", hue: 130, title: "Study room tonight: KCL problem set (7pm IST)", body: "Bringing the node-voltage worksheet from the Physics notes. Split screen: shared scratch on the left, timer on the right. All tiers welcome.", tag: "Study room", replies: [], ts: now - 2 * DAY },
-      { id: "t4", author: "Sana D.", hue: 300, title: "Sandbox quota: save your run for a full program", body: "One run per day means I draft in the editor, dry-trace on paper, then execute once. Rollback snapshots make experiments safe.", tag: "Sandbox", replies: [{ id: "tr4", author: "Meera P.", body: "The snapshot before refactor has saved me twice this week.", ts: now - 2 * DAY }], ts: now - 3 * DAY },
-    ],
-    room: { notes: "KCL worksheet — node A:\n(vA − 5)/1000 + vA/2000 = 0\n→ vA = 10/3 V ≈ 3.33 V\n\nNext: add the 2mA source at node B.", hands: [] },
-    atlasVisited: ["alg-vars", "math-linear"],
+    community: [],
+    room: { notes: "", hands: [] },
+    atlasVisited: [],
     admin: {
-      students: [
-        { id: "st1", name: "Aarav Sharma", email: "aarav@academia.app", tier: "A", module: "Sandbox", quotaHealth: "Healthy", status: "ACTIVE", flags: 0, letters: "A·B·A·C", joined: "2025-06-12", lastSeen: "2 min ago", logs: ["09:41 · Signed in (paper theme)", "09:44 · Sandbox run #14 executed", "10:02 · 3 flashcards rated (SM-2)", "10:15 · Proposal p1 moved to In review"] },
-        { id: "st2", name: "Ishita Verma", email: "ishita.v@academia.app", tier: "A", module: "Numera", quotaHealth: "Healthy", status: "ACTIVE", flags: 0, letters: "A·A·B·B", joined: "2025-06-14", lastSeen: "now", logs: ["09:58 · Matrix RREF computed", "10:11 · Joined study room #3"] },
-        { id: "st3", name: "Rohan Kulkarni", email: "rohan.k@academia.app", tier: "B", module: "Workbench", quotaHealth: "Watch", status: "ACTIVE", flags: 1, letters: "B·C·A·B", joined: "2025-07-02", lastSeen: "18 min ago", logs: ["08:50 · MNA solver: singular matrix warning", "09:12 · Snapshot rolled back"] },
-        { id: "st4", name: "Meera Pillai", email: "meera.p@academia.app", tier: "A", module: "Library", quotaHealth: "Healthy", status: "ACTIVE", flags: 0, letters: "A·B·B·A", joined: "2025-07-19", lastSeen: "1 h ago", logs: ["08:05 · 22 cards reviewed", "08:40 · Note 'Chain rule' updated"] },
-        { id: "st5", name: "Kabir Anand", email: "kabir.a@academia.app", tier: "C", module: "Community", quotaHealth: "Exceeded", status: "ACTIVE", flags: 3, letters: "C·D·C·E", joined: "2025-08-01", lastSeen: "3 h ago", logs: ["07:22 · Keystroke filter: draft blocked", "07:24 · Keystroke filter: draft blocked", "07:31 · Thread posted after rephrase"] },
-        { id: "st6", name: "Sana D'Souza", email: "sana.d@academia.app", tier: "B", module: "Portfolio", quotaHealth: "Watch", status: "ACTIVE", flags: 0, letters: "B·B·C·A", joined: "2025-08-11", lastSeen: "26 min ago", logs: ["09:02 · Weekly quota 8/10 consumed"] },
-        { id: "st7", name: "Dev Patel", email: "dev.p@academia.app", tier: "D", module: "Media", quotaHealth: "Healthy", status: "INACTIVE", until: now + 2 * DAY, flags: 1, letters: "D·C·D·C", joined: "2025-08-20", lastSeen: "2 d ago", logs: ["Aug 28 · Usage paused 7 days (exam week request)"] },
-        { id: "st8", name: "Ananya Iyer", email: "ananya.i@academia.app", tier: "A", module: "Adoro", quotaHealth: "Healthy", status: "ACTIVE", flags: 0, letters: "A·A·A·B", joined: "2025-06-30", lastSeen: "now", logs: ["10:00 · Diagnostic report generated", "10:04 · Weakness map: Mechanics"] },
-        { id: "st9", name: "Farhan Ali", email: "farhan.a@academia.app", tier: "C", module: "Tally", quotaHealth: "Watch", status: "ACTIVE", flags: 0, letters: "C·C·B·D", joined: "2025-09-03", lastSeen: "5 h ago", logs: ["06:45 · Target GPA slider → 8.7"] },
-        { id: "st10", name: "Priya Nair", email: "priya.n@academia.app", tier: "B", module: "Atlas", quotaHealth: "Healthy", status: "ACTIVE", flags: 0, letters: "B·A·B·C", joined: "2025-07-25", lastSeen: "44 min ago", logs: ["09:30 · Prerequisite path completed: eigenvalues"] },
-        { id: "st11", name: "Arjun Mehta", email: "arjun.m@academia.app", tier: "E", module: "Pomodoro", quotaHealth: "Exceeded", status: "BAN", flags: 6, letters: "E·D·E·D", joined: "2025-09-15", lastSeen: "6 d ago", logs: ["Sep 19 · Repeated charter violations", "Sep 20 · ACCOUNT_BANNED issued"] },
-        { id: "st12", name: "Lakshmi Rao", email: "lakshmi.r@academia.app", tier: "B", module: "Inventory", quotaHealth: "Healthy", status: "ACTIVE", flags: 0, letters: "B·B·A·C", joined: "2025-08-29", lastSeen: "12 min ago", logs: ["10:01 · Milestone predictor recalculated"] },
-      ],
+      students: [],
       stats: [
         { label: "Modules", value: "50+" },
-        { label: "Students", value: "12K+" },
-        { label: "Deterministic", value: "100%" },
+        { label: "Deterministic State", value: "100%" },
       ],
       features: [
-        { id: "c1", title: "Active-recall Library", body: "SM-2 scheduled flashcards, margin notes and summaries that resurface exactly when memory decays — never before, never late.", badge: "SM-2 engine", icon: "book", span: 2 },
-        { id: "c2", title: "Deterministic Sandbox", body: "A WebAssembly-target editor with daily run quotas and rollback snapshots. Same input, same output — every time.", badge: "1/day · 5/week", icon: "terminal", span: 1 },
-        { id: "c3", title: "Numera Math Engine", body: "Scientific, graphical, matrix, geometry and 3D modes with visible parse trees. The working is the answer.", badge: "5 modes", icon: "sigma", span: 1 },
-        { id: "c4", title: "Admissions Inventory", body: "Opportunity deadlines on a milestone ladder calibrated to top-tier applications, with Gantt-style roadmaps.", badge: "Milestone predictor", icon: "flag", span: 1 },
-        { id: "c5", title: "Sealed Locker", body: "Application documents encrypted to .academia-lock with tamper indicators and manual key re-import. Your vault, your keys.", badge: "Tamper-evident", icon: "lock", span: 1 },
-        { id: "c6", title: "Rule-built companions", body: "TallyBud, Adoro Buddy and the Catalyst Engine are inspectable rule machines — every reply traces to a rule you can read.", badge: "No black boxes", icon: "workflow", span: 2 },
+        { id: "c1", title: "Active-recall Library", body: "SM-2 scheduled flashcards, margin notes and summaries.", badge: "SM-2 engine", icon: "book", span: 2 },
+        { id: "c2", title: "Deterministic Sandbox", body: "Deterministic AST execution engine with step quotas and rollback snapshots.", badge: "1/day · 5/week", icon: "terminal", span: 1 },
       ],
       warnings: [],
-      flagsOpen: 4,
+      flagsOpen: 0,
     },
     ops: 0,
   };
@@ -268,6 +408,8 @@ interface AppCtx {
   toasts: Toast[];
   dismiss: (id: string) => void;
   resetAll: () => void;
+  registerUser: (payload: UserRegistrationPayload) => void;
+  liquidateSession: (reason?: string) => void;
 }
 const Ctx = createContext<AppCtx | null>(null);
 const LS_KEY = "academia-state-v3";
@@ -280,6 +422,37 @@ const DANGEROUS_KEYS = new Set([
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Structural comparison schema validator.
+ * Validates candidate object against expected structure, eliminates prototype pollution,
+ * and gracefully rejects stale or mismatched structures.
+ */
+export function validateSchemaStructure<T>(expected: T, candidate: unknown): candidate is T {
+  if (candidate === null || candidate === undefined) return false;
+  if (typeof expected !== typeof candidate) return false;
+
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(candidate)) return false;
+    if (expected.length === 0) return true;
+    const exemplar = expected[0];
+    return candidate.every(item => validateSchemaStructure(exemplar, item));
+  }
+
+  if (isPlainObject(expected)) {
+    if (!isPlainObject(candidate)) return false;
+    for (const key of Object.keys(candidate)) {
+      if (DANGEROUS_KEYS.has(key)) return false;
+    }
+    for (const key of Object.keys(expected)) {
+      if (!(key in candidate)) return false;
+      if (!validateSchemaStructure(expected[key], candidate[key])) return false;
+    }
+    return true;
+  }
+
+  return true;
+}
 
 /* Deep-merge persisted JSON onto the seed shape: every key is type-checked
    against the seed, prototype-polluting keys are dropped, and anything that
@@ -296,7 +469,17 @@ function mergeValue(seedV: unknown, got: unknown): unknown {
     return items.slice(0, 5000);
   }
   if (isPlainObject(seedV)) {
-    return isPlainObject(got) ? mergeObject(seedV, got) : seedV;
+    if (!isPlainObject(got)) return seedV;
+    if (Object.keys(seedV).length === 0) {
+      const sanitizedDict: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(got)) {
+        if (DANGEROUS_KEYS.has(k)) continue;
+        if (typeof v === "number" && isFinite(v)) sanitizedDict[k] = v;
+        else if (typeof v === "string") sanitizedDict[k] = v;
+      }
+      return sanitizedDict;
+    }
+    return mergeObject(seedV, got);
   }
   if (typeof seedV === "number") return typeof got === "number" && isFinite(got) ? got : seedV;
   return typeof got === typeof seedV ? got : seedV;
@@ -308,40 +491,35 @@ function mergeObject(seedObj: Record<string, unknown>, got: Record<string, unkno
     if (DANGEROUS_KEYS.has(key)) continue;
     out[key] = key in got ? mergeValue(seedObj[key], got[key]) : seedObj[key];
   }
-  // optional fields that exist only in persisted data (e.g. session.parental, session.inactiveUntil)
-  // Explicit allowlist prevents arbitrary attacker-controlled keys from being merged
-  // into the app state from a tampered localStorage payload.
   const OPTIONAL_SCALAR_KEYS = new Set([
     "inactiveUntil", "provisionStart", "token", "email",
-    "clozeIdx", "sourceNoteId", "lapses", "tier",
+    "clozeIdx", "sourceNoteId", "lapses", "tier", "accessToken",
   ]);
-  // Optional sub-objects with a fixed known shape; validated field-by-field.
   const OPTIONAL_OBJECT_EXEMPLARS: Record<string, Record<string, unknown>> = {
-    parental: { email: "", token: null }, // { email: string; token: string | null }
+    parental: { email: "", token: null },
+    tokenClaims: { role: "", iss: "", sub: "" },
   };
   for (const key of Object.keys(got)) {
     if (DANGEROUS_KEYS.has(key) || key in out) continue;
     const v = got[key];
     if (key in OPTIONAL_OBJECT_EXEMPLARS) {
-      // Validate the sub-object against its known shape; merge scalars only
       if (!isPlainObject(v)) continue;
       out[key] = mergeObject(OPTIONAL_OBJECT_EXEMPLARS[key], v as Record<string, unknown>);
       continue;
     }
-    if (!OPTIONAL_SCALAR_KEYS.has(key)) continue; // drop unknown extra keys
+    if (!OPTIONAL_SCALAR_KEYS.has(key)) continue;
     if (v === null || typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && isFinite(v))) out[key] = v;
   }
   return out;
 }
 
 const TIERS: Tier[] = ["A", "B", "C", "D", "E"];
-const STATUSES: AccountStatus[] = ["ACTIVE", "INACTIVE", "BAN"];
 const STAGES = ["questionnaire", "provisioning", "ready"] as const;
 
 /* enum + range clamping on top of the shape merge */
 function clampState(s: AppState): AppState {
   s.session.role = s.session.role === "admin" ? "admin" : "student";
-  s.session.status = STATUSES.includes(s.session.status) ? s.session.status : "ACTIVE";
+  s.session.status = isValidAccountStatus(s.session.status) ? s.session.status : "ACTIVE";
   s.session.tier = TIERS.includes(s.session.tier) ? s.session.tier : "A";
   s.session.stage = (STAGES as readonly string[]).includes(s.session.stage) ? s.session.stage : "ready";
   s.theme = s.theme === "midnight" ? "midnight" : "paper";
@@ -350,11 +528,9 @@ function clampState(s: AppState): AppState {
     s.quotas[key].d = Math.min(Math.max(0, Math.round(s.quotas[key].d) || 0), max.d);
     s.quotas[key].w = Math.min(Math.max(0, Math.round(s.quotas[key].w) || 0), max.w);
   }
-  // Ensure reviewLog is a capped array (5000 max)
   if (!Array.isArray(s.reviewLog)) s.reviewLog = [];
   else if (s.reviewLog.length > 5000) s.reviewLog = s.reviewLog.slice(-5000);
 
-  // Ensure librarySettings exist and are positive
   if (!s.librarySettings || typeof s.librarySettings !== "object") {
     s.librarySettings = { dailyNewLimit: 20, dailyReviewLimit: 100 };
   } else {
@@ -362,7 +538,6 @@ function clampState(s: AppState): AppState {
     s.librarySettings.dailyReviewLimit = Math.max(1, Math.min(1000, Math.round(s.librarySettings.dailyReviewLimit) || 100));
   }
 
-  // Cap per-card history to 50
   if (Array.isArray(s.flashcards)) {
     for (const card of s.flashcards) {
       if (Array.isArray(card.history) && card.history.length > 50) {
@@ -379,8 +554,7 @@ export function sanitizeState(parsed: unknown): AppState | null {
   return clampState(mergeObject(seed() as unknown as Record<string, unknown>, parsed) as unknown as AppState);
 }
 
-/* refill daily quotas at local midnight, weekly quotas on local Monday,
-   and heal states persisted before quotaReset existed. */
+/* refill daily quotas at local midnight, weekly quotas on local Monday */
 export function refillQuotas(s: AppState, now = Date.now()): AppState {
   const daily = dayKey(now), weekly = weekKey(now);
   const q = s.quotas;
@@ -396,27 +570,62 @@ export function refillQuotas(s: AppState, now = Date.now()): AppState {
 }
 
 export function buildProductionCleanState(): AppState {
-  const base = seed();
-  base.session = {
-    authed: false,
-    role: "student",
-    name: "",
-    email: "",
-    tier: "A",
-    stage: "questionnaire",
-    status: "ACTIVE",
+  const now = Date.now();
+  return {
+    version: 3,
+    theme: "paper",
+    cookies: { decided: false, media: false },
+    session: {
+      authed: false,
+      role: "student",
+      name: "",
+      email: "",
+      tier: "A",
+      stage: "questionnaire",
+      status: "ACTIVE",
+    },
+    questionnaire: { ack: false, answers: {}, sandboxEnabled: false },
+    quotas: {
+      portfolio: { d: QUOTA_MAX.portfolio.d, w: QUOTA_MAX.portfolio.w },
+      sandbox: { d: QUOTA_MAX.sandbox.d, w: QUOTA_MAX.sandbox.w },
+      chat: { d: QUOTA_MAX.chat.d, w: QUOTA_MAX.chat.w },
+    },
+    quotaReset: { daily: dayKey(now), weekly: weekKey(now) },
+    flashcards: [],
+    reviewLog: [],
+    librarySettings: { dailyNewLimit: 20, dailyReviewLimit: 100 },
+    notes: [],
+    videosWatched: [],
+    resume: { name: "", headline: "", school: "", skills: [], activities: [] },
+    proposals: [],
+    sandbox: { code: DEFAULT_CODE, runs: 0, snapshots: [] },
+    locker: { docs: [], tamper: false, lastImport: null },
+    rules: [
+      { id: "r1", trigger: "Keyword match", keywords: ["deadline", "due"], response: "Open Inventory → Milestones to review your registered opportunities.", enabled: true },
+    ],
+    inventory: [],
+    announcements: [],
+    grades: [],
+    pomodoro: { sessions: {}, focusMin: 25, breakMin: 5 },
+    adoro: [],
+    community: [],
+    room: { notes: "", hands: [] },
+    atlasVisited: [],
+    admin: {
+      students: [],
+      stats: [
+        { label: "Modules", value: "50+" },
+        { label: "Active", value: "0" },
+        { label: "Deterministic", value: "100%" },
+      ],
+      features: [
+        { id: "c1", title: "Active-recall Library", body: "SM-2 scheduled flashcards, margin notes and summaries.", badge: "SM-2 engine", icon: "book", span: 2 },
+      ],
+      warnings: [],
+      flagsOpen: 0,
+    },
+    ops: 0,
   };
-  base.admin.students = [];
-  base.admin.warnings = [];
-  base.flashcards = [];
-  base.notes = [];
-  base.inventory = [];
-  base.announcements = [];
-  base.grades = [];
-  base.proposals = [];
-  base.sandbox.snapshots = [];
-  base.locker.docs = [];
-  return base;
 }
 
 function load(): AppState {
@@ -433,19 +642,18 @@ function load(): AppState {
         if (ENV.appEnv === "production" && !ENV.allowMockFallback && !parsed.session.authed) {
           return buildProductionCleanState();
         }
-        // states persisted before quotaReset existed get one refill, then stamp normally
         const legacy = !isPlainObject(json) || !isPlainObject((json as Record<string, unknown>).quotaReset);
         return refillQuotas(legacy ? { ...parsed, quotaReset: { daily: "", weekly: "" } } : parsed);
       }
     }
   } catch {
     if (ENV.appEnv === "production" && !ENV.allowMockFallback) {
-      throw new Error("Configuration Error: Corrupted state recovery failure. Mock data rollback prohibited in production.");
+      return buildProductionCleanState();
     }
   }
 
   if (ENV.appEnv === "production" && !ENV.allowMockFallback) {
-    throw new Error("Configuration Error: Unauthenticated mock data rollback prohibited in production environment.");
+    return buildProductionCleanState();
   }
 
   return seed();
@@ -482,7 +690,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => { window.clearInterval(iv); document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", check); };
   }, []);
 
-  /* never lose the last <350ms of edits: flush on hide/pagehide */
+  /* never lose edits: flush on hide/pagehide */
   useEffect(() => {
     const flush = () => persist(sRef.current);
     const onVis = () => { if (document.visibilityState === "hidden") flush(); };
@@ -506,6 +714,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  /* asynchronous hydration from verified Supabase BaaS in production */
+  useEffect(() => {
+    if (s.session.authed && ENV.supabaseUrl && ENV.appEnv === "production") {
+      const client = getSupabaseClient();
+      client.from("announcements").select("*").then(({ data }) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setS(prev => ({
+            ...prev,
+            announcements: data as Announcement[],
+          }));
+        }
+      }).catch(() => {});
+    }
+  }, [s.session.authed]);
+
   const up = (fn: (draft: AppState) => void) => {
     setS(prev => {
       const draft = JSON.parse(JSON.stringify(prev)) as AppState;
@@ -514,6 +737,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return draft;
     });
   };
+
+  const registerUser = (payload: UserRegistrationPayload) => {
+    const fresh = createInitialUserState(payload);
+    setS(fresh);
+    persist(fresh);
+  };
+
   const dismiss = (id: string) => setToasts(t => t.filter(x => x.id !== id));
   const toast = (msg: string, tone: Toast["tone"] = "ok", action?: Toast["action"]) => {
     const id = uid();
@@ -525,7 +755,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setS(ENV.appEnv === "production" && !ENV.allowMockFallback ? buildProductionCleanState() : seed());
   };
 
-  return <Ctx.Provider value={{ s, up, toast, toasts, dismiss, resetAll }}>{children}</Ctx.Provider>;
+  const liquidateSession = (reason?: string) => {
+    up(draft => {
+      draft.session = {
+        authed: false,
+        role: "student",
+        name: "",
+        email: "",
+        tier: "A",
+        stage: "ready",
+        status: "ACTIVE",
+        tokenClaims: undefined,
+        accessToken: undefined,
+      };
+    });
+    if (reason) {
+      toast(reason, "err");
+    }
+  };
+
+  return <Ctx.Provider value={{ s, up, toast, toasts, dismiss, resetAll, registerUser, liquidateSession }}>{children}</Ctx.Provider>;
 }
 
 export function useApp(): AppCtx {
@@ -535,10 +784,52 @@ export function useApp(): AppCtx {
 }
 
 export function spendQuota(s: AppState, key: "portfolio" | "sandbox" | "chat"): boolean {
-  return s.quotas[key].d > 0 && s.quotas[key].w > 0;
+  const allowed = s.quotas[key].d > 0 && s.quotas[key].w > 0;
+  if (allowed && ENV.supabaseUrl && ENV.appEnv === "production") {
+    // Fire-and-forget backend sync RPC
+    rpcConsumeQuota(key).catch(() => {});
+  }
+  return allowed;
 }
-export function fmtDate(t: number): string {
-  return new Date(t).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+export function getUserLocale(fallback = "en-US"): string {
+  if (typeof navigator !== "undefined" && navigator.language) {
+    return navigator.language;
+  }
+  return fallback;
+}
+
+export function fmtDate(
+  t: number | Date,
+  options?: Intl.DateTimeFormatOptions | string,
+  locale?: string
+): string {
+  const opts: Intl.DateTimeFormatOptions =
+    typeof options === "object" ? options : { day: "numeric", month: "short" };
+  const loc = typeof options === "string" ? options : (locale || getUserLocale());
+  return new Date(t).toLocaleDateString(loc, opts);
+}
+
+export function fmtTime(
+  t: number | Date = Date.now(),
+  options?: Intl.DateTimeFormatOptions | string,
+  locale?: string
+): string {
+  const opts: Intl.DateTimeFormatOptions =
+    typeof options === "object" ? options : { hour: "2-digit", minute: "2-digit" };
+  const loc = typeof options === "string" ? options : (locale || getUserLocale());
+  return new Date(t).toLocaleTimeString(loc, opts);
+}
+
+export function fmtDateTime(
+  t: number | Date = Date.now(),
+  options?: Intl.DateTimeFormatOptions | string,
+  locale?: string
+): string {
+  const opts: Intl.DateTimeFormatOptions =
+    typeof options === "object" ? options : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+  const loc = typeof options === "string" ? options : (locale || getUserLocale());
+  return new Date(t).toLocaleString(loc, opts);
 }
 export function daysUntil(t: number): number {
   return Math.max(0, Math.ceil((t - Date.now()) / DAY));
@@ -584,7 +875,6 @@ export function weightedGpaOf(grades: Course[]): GpaMatrixResult {
   const unweightedPts = grades.reduce((a, g) => a + g.credits * (g.score / 10), 0);
   const weightedPts = grades.reduce((a, g) => {
     const bump = g.tier ? (TIER_WEIGHT_BUMP[g.tier] ?? 0) : 0;
-    // Scale bump to 10-point scale: 0.5 on 4-scale = 1.25 on 10-scale
     const scaledBump = bump * 1.25;
     const adjustedScore = Math.min(10, (g.score / 10) + scaledBump);
     return a + g.credits * adjustedScore;

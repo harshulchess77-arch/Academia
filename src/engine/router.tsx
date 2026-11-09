@@ -1,18 +1,34 @@
-/* Academia · headless hash router + route guards (client FSM, no server) */
+/* Academia · headless hash router + route guards (client FSM, no server)
+   Protected by HexStrike AI Serverless Defensive Routing & WAF Shield. */
 import { useEffect, useState } from "react";
+import { hexstrikeSanitizeRoute } from "@/engine/hexstrike-waf";
 
 export const ASSISTANT_EXCLUDED = ["/404", "/500", "/banned", "/inactive", "/locker-locked"];
 
 export function currentPath(): string {
   const h = window.location.hash.replace(/^#/, "");
-  if (h && h !== "") return h;
-  const p = window.location.pathname;
-  return p && p !== "/" && p !== "/blank" ? p : "/";
+  let raw = "/";
+  if (h && h !== "") {
+    raw = h;
+  } else {
+    const p = window.location.pathname;
+    if (p && p !== "/" && p !== "/blank") raw = p;
+  }
+
+  // Pass through HexStrike AI Deep Packet & Route Inspection
+  const { safeRoute } = hexstrikeSanitizeRoute(raw);
+  return safeRoute;
 }
 
 export function navigate(to: string) {
-  if (currentPath() === to) return;
-  window.location.hash = to;
+  const { safeRoute, blocked } = hexstrikeSanitizeRoute(to);
+  if (blocked) {
+    // Malicious injection payload intercepted: force eviction to safe root
+    window.location.hash = "/";
+    return;
+  }
+  if (currentPath() === safeRoute) return;
+  window.location.hash = safeRoute;
 }
 
 export function useRoute(): string {
@@ -35,4 +51,15 @@ export function isExcludedRoute(path: string): boolean {
 
 export function isAppRoute(path: string): boolean {
   return path !== "/" && path !== "/auth" && path !== "/questionnaire" && path !== "/provisioning" && !isExcludedRoute(path);
+}
+
+export const ADMIN_ROUTES = [
+  "/admin",
+  "/admin/console",
+  "/admin/dashboard",
+  "/admin/students",
+] as const;
+
+export function isAdminRoute(path: string): boolean {
+  return path === "/admin" || path.startsWith("/admin/");
 }

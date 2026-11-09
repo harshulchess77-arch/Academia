@@ -1,7 +1,7 @@
 /* Academia · error / banned / inactive / locker-locked states.
    Assistant UI is fully unmounted on these routes (strict exclusion guard). */
 import { ArrowLeft, KeyRound, Lock, Mail, NotebookPen } from "lucide-react";
-import { useApp } from "@/engine/store";
+import { useApp, fmtDateTime } from "@/engine/store";
 import { navigate } from "@/engine/router";
 import { DoodleStar } from "@/components/ui";
 
@@ -14,7 +14,7 @@ const COPY: Record<string, { code: string; title: string; body: string; tone: st
 };
 
 export function StatusView({ kind }: { kind: string }) {
-  const { s, up, resetAll } = useApp();
+  const { s } = useApp();
   const c = COPY[kind] ?? COPY["/404"];
   const banned = kind === "/banned";
   const inactive = kind === "/inactive";
@@ -34,17 +34,15 @@ export function StatusView({ kind }: { kind: string }) {
           </p>
         )}
         {inactive && until && (
-          <p className="mt-4 font-mono text-sm">Restores {new Date(until).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+          <p className="mt-4 font-mono text-sm">Restores {fmtDateTime(until, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
         )}
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           {kind === "/locker-locked" ? (
             <button className="btn btn-primary" onClick={() => navigate("/locker")}><KeyRound size={16} /> Re-import vault key</button>
           ) : banned || inactive ? (
             <>
-              <a className="btn" href="mailto:grievance@academia.app?subject=Access%20appeal"><Mail size={16} /> Appeal to grievance officer</a>
-              <button className="btn btn-warn" onClick={() => { up(d => { d.session.status = "ACTIVE"; d.session.inactiveUntil = undefined; }); navigate("/dashboard"); }}>
-                Restore demo session
-              </button>
+              <a className="btn btn-primary" href="mailto:grievance@academia.app?subject=Access%20appeal"><Mail size={16} /> Appeal to grievance officer</a>
+              <button className="btn btn-ghost" onClick={() => navigate("/")}><ArrowLeft size={16} /> Landing</button>
             </>
           ) : (
             <>
@@ -53,9 +51,6 @@ export function StatusView({ kind }: { kind: string }) {
             </>
           )}
         </div>
-        {(banned || inactive) && (
-          <button className="link-ink mt-5 text-xs" onClick={() => { resetAll(); navigate("/"); }}>Reset the entire demo notebook</button>
-        )}
         <p className="mt-8 flex items-center justify-center gap-1.5 font-hand text-lg" style={{ color: "var(--text-300)" }}>
           <NotebookPen size={15} /> the margins are always yours
         </p>

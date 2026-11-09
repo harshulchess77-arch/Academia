@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, beforeEach, beforeAll } from "vitest";
+import { describe, expect, it, beforeEach, beforeAll, afterAll } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import App from "@/App";
@@ -22,7 +22,13 @@ Object.defineProperty(globalThis, "localStorage", { value: memStorage, configura
 
 /* jsdom has no canvas implementation — stub a no-op 2D context so views
    that paint on mount (Scratchpad, Numera graph) render their DOM. */
+const origError = console.error;
 beforeAll(() => {
+  console.error = (...args: unknown[]) => {
+    if (typeof args[0] === "string" && (args[0].includes("was not wrapped in act(...)") || args[0].includes("pingSuspendedRoot"))) return;
+    origError(...args);
+  };
+  window.scrollTo = () => {};
   const ctx2d = new Proxy({}, {
     get: (_t, prop) => {
       if (prop === "getImageData") return () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 });
@@ -32,6 +38,13 @@ beforeAll(() => {
     set: () => true,
   });
   HTMLCanvasElement.prototype.getContext = function () { return ctx2d as never; };
+});
+
+afterAll(async () => {
+  await act(async () => {
+    await new Promise(r => setTimeout(r, 150));
+  });
+  console.error = origError;
 });
 
 const LS_KEY = "academia-state-v3";
@@ -65,8 +78,8 @@ beforeEach(() => {
   window.location.hash = "";
 });
 
-const STUDENT_ROUTES = ["/dashboard", "/library", "/media", "/portfolio", "/sandbox", "/locker", "/catalyst", "/scratchpad", "/inventory", "/announcements", "/numera", "/tally", "/pomodoro", "/adoro", "/workbench", "/community", "/atlas"];
-const ADMIN_ROUTES = ["/admin/dashboard", "/admin/students"];
+const STUDENT_ROUTES = ["/dashboard", "/library", "/media", "/portfolio", "/sandbox", "/locker", "/catalyst", "/scratchpad", "/inventory", "/announcements", "/numera", "/tally", "/pomodoro", "/adoro", "/workbench", "/community", "/atlas", "/tutor"];
+const ADMIN_ROUTES = ["/admin/console", "/admin/dashboard", "/admin/students"];
 
 function persistState(mutate: (s: ReturnType<typeof seed>) => void) {
   const s = seed();
@@ -105,36 +118,57 @@ describe("route smoke — signed out", () => {
   });
 });
 
+async function waitForView() {
+  for (let i = 0; i < 30; i++) {
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 20));
+    });
+    const canvas = host.querySelector("#main-canvas");
+    if (canvas && !host.querySelector("[aria-label='Loading view...']")) {
+      break;
+    }
+  }
+}
+
 describe("route smoke — student", () => {
   beforeEach(() => persistState(s => { s.session.authed = true; s.session.role = "student"; }));
 
   for (const route of STUDENT_ROUTES) {
-    it(`mounts ${route} without crashing`, async () => {
+    it(`mounts and fully renders ${route} without crashing`, async () => {
       await setHash(route);
       await mount();
-      expect(host.querySelector("#main-canvas")).toBeTruthy();
+      await waitForView();
+      const canvas = host.querySelector("#main-canvas");
+      expect(canvas).toBeTruthy();
+      expect(canvas!.textContent?.trim().length).toBeGreaterThan(0);
       await unmount();
     });
   }
 
-  it("redirects admin routes away from students", async () => {
+  it("evicts admin routes away from unverified students with session liquidation", async () => {
     persistState(s => { s.session.authed = true; s.session.role = "student"; });
     await setHash("/admin/dashboard");
     await mount();
-    expect(host.querySelector("#main-canvas")).toBeTruthy();
     expect(window.location.hash).not.toContain("/admin");
     await unmount();
   });
 });
 
 describe("route smoke — admin", () => {
-  beforeEach(() => persistState(s => { s.session.authed = true; s.session.role = "admin"; }));
+  beforeEach(() => persistState(s => {
+    s.session.authed = true;
+    s.session.role = "admin";
+    s.session.tokenClaims = { role: "academia_admin" };
+  }));
 
   for (const route of ADMIN_ROUTES) {
-    it(`mounts ${route} without crashing`, async () => {
+    it(`mounts and fully renders ${route} without crashing`, async () => {
       await setHash(route);
       await mount();
-      expect(host.querySelector("#main-canvas")).toBeTruthy();
+      await waitForView();
+      const canvas = host.querySelector("#main-canvas");
+      expect(canvas).toBeTruthy();
+      expect(canvas!.textContent?.trim().length).toBeGreaterThan(0);
       await unmount();
     });
   }

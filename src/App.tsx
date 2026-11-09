@@ -1,10 +1,10 @@
 /* Academia — application root: providers, hash router, route-guard FSM,
-   and Route-Level Code Splitting with Skeletal Suspense shells */
+   Route-Level Code Splitting, and Strict Administrative Isolation Barrier. */
 
-import React, { lazy, Suspense, useEffect } from "react";
-import { AppProvider, useApp } from "@/engine/store";
+import React, { createContext, useContext, lazy, Suspense, useEffect } from "react";
+import { AppProvider, useApp, ENV, verifyAdminClaims, type SessionClaims } from "@/engine/store";
 import { ModalProvider } from "@/engine/modal";
-import { useRoute, navigate, isExcludedRoute, isAppRoute } from "@/engine/router";
+import { useRoute, navigate, isExcludedRoute, isAppRoute, isAdminRoute } from "@/engine/router";
 import { ToastHost, ViewSkeleton } from "@/components/ui";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { Shell } from "@/components/navigation/shell";
@@ -17,6 +17,7 @@ import { StatusView } from "@/views/status";
 // Route-Level Code Splitting with native React.lazy()
 const DashboardView = lazy(() => import("@/views/dashboard").then(m => ({ default: m.DashboardView })));
 const LibraryView = lazy(() => import("@/views/library").then(m => ({ default: m.LibraryView })));
+const TutorView = lazy(() => import("@/views/tutor").then(m => ({ default: m.TutorView })));
 const MediaView = lazy(() => import("@/views/media").then(m => ({ default: m.MediaView })));
 const PortfolioView = lazy(() => import("@/views/portfolio").then(m => ({ default: m.PortfolioView })));
 const SandboxView = lazy(() => import("@/views/sandbox").then(m => ({ default: m.SandboxView })));
@@ -32,12 +33,14 @@ const AdoroView = lazy(() => import("@/views/adoro").then(m => ({ default: m.Ado
 const WorkbenchView = lazy(() => import("@/views/workbench").then(m => ({ default: m.WorkbenchView })));
 const CommunityView = lazy(() => import("@/views/community").then(m => ({ default: m.CommunityView })));
 const AtlasView = lazy(() => import("@/views/atlas").then(m => ({ default: m.AtlasView })));
+const AdminConsoleView = lazy(() => import("@/views/AdminConsole").then(m => ({ default: m.AdminConsoleView })));
 const AdminDashboardView = lazy(() => import("@/views/admin/dashboard").then(m => ({ default: m.AdminDashboardView })));
 const AdminStudentsView = lazy(() => import("@/views/admin/students").then(m => ({ default: m.AdminStudentsView })));
 
 const APP_VIEWS: Record<string, React.ComponentType> = {
   "/dashboard": DashboardView,
   "/library": LibraryView,
+  "/tutor": TutorView,
   "/media": MediaView,
   "/portfolio": PortfolioView,
   "/sandbox": SandboxView,
@@ -53,30 +56,92 @@ const APP_VIEWS: Record<string, React.ComponentType> = {
   "/workbench": WorkbenchView,
   "/community": CommunityView,
   "/atlas": AtlasView,
+  "/admin": AdminConsoleView,
+  "/admin/console": AdminConsoleView,
   "/admin/dashboard": AdminDashboardView,
   "/admin/students": AdminStudentsView,
 };
 
+interface AdminGuardContextValue {
+  isVerifiedAdmin: boolean;
+  claims: SessionClaims | null;
+  adminId: string;
+}
+
+export const AdminGuardContext = createContext<AdminGuardContextValue | null>(null);
+
+export function useAdminGuard(): AdminGuardContextValue {
+  const ctx = useContext(AdminGuardContext);
+  if (!ctx || !ctx.isVerifiedAdmin) {
+    throw new Error("AdminGuard: Unauthorized invocation outside verified administrative barrier.");
+  }
+  return ctx;
+}
+
+/**
+ * Strict Administrative Isolation Barrier.
+ * Config-guards all admin routes, verifies JWT claims, and forces eviction & liquidation on violation.
+ */
+function AdminIsolationBarrier({ children }: { children: React.ReactNode }) {
+  const { s } = useApp();
+  const isVerified = verifyAdminClaims(s.session);
+
+  if (!isVerified) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#17110b] p-6 text-[#fbf7ee]">
+        <div className="max-w-md text-center space-y-3">
+          <p className="font-mono text-xs uppercase tracking-widest text-[#e87055]">Security Exception</p>
+          <h1 className="font-display text-2xl font-black">Administrative Isolation Barrier</h1>
+          <p className="font-mono text-xs opacity-75">
+            Cryptographic audit breach. Role claims missing or invalid. Evicting and liquidating credentials.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const value: AdminGuardContextValue = {
+    isVerifiedAdmin: true,
+    claims: s.session.tokenClaims ?? null,
+    adminId: s.session.email || "academia_governance_admin",
+  };
+
+  return (
+    <AdminGuardContext.Provider value={value}>
+      {children}
+    </AdminGuardContext.Provider>
+  );
+}
+
 function Root() {
-  const { s, up, toast } = useApp();
+  const { s, up, toast, liquidateSession } = useApp();
   const path = useRoute();
   const base = path.split("?")[0];
   const sess = s.session;
   const appRoute = isAppRoute(base) && base in APP_VIEWS;
+  const adminAttempt = isAdminRoute(base);
 
   /* guard resolution — synchronous so protected content never flashes */
   let guard: string | null = null;
   if (sess.status === "BAN" && (appRoute || base === "/questionnaire" || base === "/provisioning")) guard = "/banned";
   else if (sess.status === "INACTIVE" && (sess.inactiveUntil ?? 0) > Date.now() && (appRoute || base === "/questionnaire" || base === "/provisioning")) guard = "/inactive";
+  else if (adminAttempt && (!sess.authed || !verifyAdminClaims(sess))) {
+    // Immediate administrative isolation guard
+    guard = "/auth";
+  }
   else if (!sess.authed && appRoute) guard = "/auth";
   else if (sess.authed && sess.stage === "questionnaire" && appRoute) guard = "/questionnaire";
   else if (sess.authed && sess.stage === "provisioning" && appRoute) guard = "/provisioning";
   else if ((base === "/questionnaire" || base === "/provisioning") && !sess.authed) guard = "/auth";
-  else if (base.startsWith("/admin") && appRoute && sess.role !== "admin") guard = "/dashboard";
 
   useEffect(() => {
-    if (guard && guard !== base) navigate(guard);
-  }, [guard, base]);
+    if (guard && guard !== base) {
+      if (adminAttempt && (!sess.authed || !verifyAdminClaims(sess))) {
+        liquidateSession("Administrative boundary breached: Missing or unverified claims. Session liquidated.");
+      }
+      navigate(guard);
+    }
+  }, [guard, base]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* auto-restore expired usage pauses */
   useEffect(() => {
@@ -97,13 +162,16 @@ function Root() {
   else if (base === "/questionnaire") content = <QuestionnaireView />;
   else if (base === "/provisioning") content = <ProvisioningView />;
   else if (isExcludedRoute(base)) content = <StatusView kind={base} />;
-  else if (guard === "/dashboard") {
+  else if (adminAttempt && appRoute) {
+    const View = APP_VIEWS[base] ?? AdminConsoleView;
     content = (
-      <Shell path="/dashboard">
-        <Suspense fallback={<ViewSkeleton route="/dashboard" />}>
-          <DashboardView />
-        </Suspense>
-      </Shell>
+      <AdminIsolationBarrier>
+        <Shell path={base}>
+          <Suspense fallback={<ViewSkeleton route={base} />}>
+            <View key={path} />
+          </Suspense>
+        </Shell>
+      </AdminIsolationBarrier>
     );
   } else if (appRoute) {
     const View = APP_VIEWS[base];
@@ -127,6 +195,19 @@ function Root() {
 }
 
 export default function App() {
+  if (ENV.appEnv === "production" && (!ENV.supabaseUrl || !ENV.supabaseAnonKey)) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#17110b] p-6 text-[#fbf7ee]">
+        <div className="max-w-md text-center space-y-4">
+          <h1 className="font-display text-2xl font-black">Configuration Error</h1>
+          <p className="font-mono text-xs opacity-75">
+            Production environment infrastructure parameter invariants breached. Service halted.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AppProvider>
       <ModalProvider>

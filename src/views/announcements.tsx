@@ -1,7 +1,7 @@
 /* Academia · Phase 3.10 — admin broadcast feed with pins, tiers, read receipts */
 import { useState } from "react";
 import { Check, CheckCheck, ChevronDown, Pin } from "lucide-react";
-import { useApp, type Tier } from "@/engine/store";
+import { useApp, fmtDateTime, fmtTime, type Tier } from "@/engine/store";
 import { PageHeader, Pill } from "@/components/ui";
 import { cn } from "@/utils/cn";
 
@@ -61,7 +61,7 @@ export function AnnouncementsView() {
                 <span className="min-w-0 flex-1">
                   <span className={cn("block text-[15px] leading-snug", a.read ? "font-semibold" : "font-black")}>{a.title}</span>
                   <span className="mt-0.5 block text-xs" style={{ color: "var(--text-500)" }}>
-                    {a.author} · {new Date(a.ts).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    {a.author} · {fmtDateTime(a.ts, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </span>
                 <span className="hidden gap-1 sm:flex" aria-label={`Targets tiers ${a.tiers.join(", ")}`}>
@@ -75,7 +75,7 @@ export function AnnouncementsView() {
               {open && (
                 <div className="border-t-2 border-dashed px-5 py-4" style={{ borderColor: "var(--background-300)", animation: "slideDown .2s var(--ease-out)" }}>
                   <p className="text-sm leading-relaxed" style={{ color: "var(--text-700)" }}>{a.body}</p>
-                  <p className="mt-3 font-mono text-[10px]" style={{ color: "var(--forest-700)" }}>✓ read receipt signed {new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} · receipt id rcpt_{a.id}</p>
+                  <p className="mt-3 font-mono text-[10px]" style={{ color: "var(--forest-700)" }}>✓ read receipt signed {fmtTime(Date.now(), { hour: "2-digit", minute: "2-digit" })} · receipt id rcpt_{a.id}</p>
                 </div>
               )}
             </article>

@@ -50,7 +50,7 @@ describe("sanitizeState — corrupted localStorage resilience", () => {
   });
 
   it("falls back per-key when top-level fields have wrong types", () => {
-    const bad = clone(seed()) as Record<string, unknown>;
+    const bad = clone(seed()) as unknown as Record<string, unknown>;
     bad.quotas = "corrupted";
     bad.flashcards = 42;
     bad.notes = null;
@@ -74,7 +74,7 @@ describe("sanitizeState — corrupted localStorage resilience", () => {
   });
 
   it("drops prototype-polluting keys", () => {
-    const bad = clone(seed()) as Record<string, unknown>;
+    const bad = clone(seed()) as unknown as Record<string, unknown>;
     bad.admin = JSON.parse('{"__proto__":{"polluted":true},"students":[]}');
     const out = sanitizeState(bad)!;
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
@@ -83,7 +83,7 @@ describe("sanitizeState — corrupted localStorage resilience", () => {
   });
 
   it("repairs arrays of objects field-by-field", () => {
-    const bad = clone(seed()) as { flashcards: Record<string, unknown>[] };
+    const bad = clone(seed()) as unknown as { flashcards: Record<string, unknown>[] };
     bad.flashcards = [{ id: "x", front: 123, ef: "high" }] as never;
     const out = sanitizeState(bad)!;
     expect(out.flashcards).toHaveLength(1);

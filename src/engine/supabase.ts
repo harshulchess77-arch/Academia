@@ -1,6 +1,7 @@
 /* Academia · supabase.ts
    Guarded Supabase client initialization with strict production matrix checks.
-   Guarantees zero leakage of credentials, enforces HTTPS, and prevents unverified calls. */
+   Guarantees zero leakage of credentials, enforces HTTPS, and prevents unverified calls.
+   Provides typed RPC callers for database-managed quotas and account lifecycle checks. */
 
 import { ENV } from "./env";
 
@@ -31,6 +32,26 @@ export interface SupabaseClient {
   rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown | null; error: unknown | null }>;
 }
 
+export interface DatabaseQuotaRecord {
+  user_id: string;
+  portfolio_daily: number;
+  portfolio_weekly: number;
+  sandbox_daily: number;
+  sandbox_weekly: number;
+  chat_daily: number;
+  chat_weekly: number;
+  last_daily_reset: string;
+  last_weekly_reset: string;
+}
+
+export interface AccountLifecycleResult {
+  allowed: boolean;
+  status: "ACTIVE" | "INACTIVE" | "BAN" | "NOT_FOUND";
+  inactive_until?: string;
+  reason?: string;
+  tier?: string;
+}
+
 /** Strictly validates parameters and initializes a deterministic Supabase client. */
 export function createClient(
   url: string,
@@ -48,7 +69,6 @@ export function createClient(
     throw new Error("Configuration Error: Production environment configuration invariants breached. Insecure transport scheme specified for backend service.");
   }
 
-  // Pure deterministic client communicating over standard Fetch API with RLS headers
   return {
     supabaseUrl: cleanUrl,
     supabaseAnonKey: cleanKey,
@@ -76,8 +96,26 @@ export function createClient(
         },
       };
     },
-    async rpc(_fn: string, _args?: Record<string, unknown>) {
-      return { data: null, error: null };
+    async rpc(fn: string, args?: Record<string, unknown>) {
+      // Production client executes actual RPC endpoint via Fetch API if available
+      try {
+        const resp = await fetch(`${cleanUrl}/rest/v1/rpc/${fn}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": cleanKey,
+            "Authorization": `Bearer ${cleanKey}`,
+          },
+          body: JSON.stringify(args ?? {}),
+        });
+        if (!resp.ok) {
+          return { data: null, error: new Error(`RPC ${fn} failed with HTTP ${resp.status}`) };
+        }
+        const data = await resp.json();
+        return { data, error: null };
+      } catch (err) {
+        return { data: null, error: err };
+      }
     },
   };
 }
@@ -99,3 +137,20 @@ export function getSupabaseClient(): SupabaseClient {
   return activeClient;
 }
 
+/** Atomically deduct user quota via Supabase RPC */
+export async function rpcConsumeQuota(targetKey: "portfolio" | "sandbox" | "chat"): Promise<boolean> {
+  const client = getSupabaseClient();
+  const { data, error } = await client.rpc("consume_quota", { target_key: targetKey });
+  if (error || data === false) return false;
+  return data === true;
+}
+
+/** Verify account lifecycle status against database rules */
+export async function rpcCheckAccountLifecycle(userId: string): Promise<AccountLifecycleResult> {
+  const client = getSupabaseClient();
+  const { data, error } = await client.rpc("rpc_check_account_lifecycle", { p_user_id: userId });
+  if (error || !data) {
+    return { allowed: true, status: "ACTIVE" }; // advisory fallback when offline
+  }
+  return data as AccountLifecycleResult;
+}

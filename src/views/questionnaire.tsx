@@ -1,30 +1,72 @@
-/* Academia · Phase 1.3 — letter-scale questionnaire with sticky accuracy gate */
+/* Academia · Phase 1.3 — letter-scale questionnaire with sticky accuracy gate.
+   Ingests user inputs dynamically into strictly-typed onboarding state with zero hardcoded fallbacks. */
 import { AlertTriangle, ArrowRight } from "lucide-react";
-import { useApp, type Tier } from "@/engine/store";
+import { useApp, type Tier, type QuestionnairePayload, type QuestionnaireAnswers } from "@/engine/store";
 import { navigate } from "@/engine/router";
 import { cn } from "@/utils/cn";
 
-const QUESTIONS = [
+const QUESTIONS: readonly { id: keyof QuestionnaireAnswers; prompt: string; options: string[] }[] = [
   { id: "tier", prompt: "Where does your current academic standing sit?", options: ["Top 10% — olympiad / competitive track", "Top 25% — advanced coursework", "Middle band — consolidating", "Rebuilding fundamentals", "Exploring — not ranked yet"] },
   { id: "habits", prompt: "What do your study habits actually look like?", options: ["Daily spaced review", "4–5 focused days a week", "Weekend batches", "Right before deadlines", "Whenever inspiration strikes"] },
   { id: "extra", prompt: "How deep are your extracurriculars?", options: ["Competitive — olympiads, debate, nationals", "Club leadership roles", "Regular sports or arts", "Occasional participation", "Haven't started yet"] },
   { id: "coding", prompt: "Your relationship with code?", options: ["I ship projects weekly", "Comfortable scripting", "Curious beginner", "I prefer theory", "No interest in coding"] },
-];
-const LETTERS = ["A", "B", "C", "D", "E"];
+] as const;
+
+const LETTERS = ["A", "B", "C", "D", "E"] as const;
 
 export function QuestionnaireView() {
   const { s, up, toast } = useApp();
-  const answers = s.questionnaire.answers;
+  const answers = s.questionnaire.answers as Partial<QuestionnaireAnswers>;
   const ack = s.questionnaire.ack;
-  const answered = QUESTIONS.filter(q => answers[q.id]).length;
+  const answered = QUESTIONS.filter(q => typeof answers[q.id] === "string" && answers[q.id]!.length > 0).length;
   const complete = answered === QUESTIONS.length && ack;
 
-  const pick = (qid: string, letter: string) => {
+  const pick = (qid: keyof QuestionnaireAnswers, letter: Tier) => {
     up(d => {
       d.questionnaire.answers[qid] = letter;
-      if (qid === "coding") d.questionnaire.sandboxEnabled = ["A", "B", "C"].includes(letter);
-      if (qid === "tier") d.session.tier = letter as Tier;
+      if (qid === "coding") {
+        d.questionnaire.sandboxEnabled = (["A", "B", "C"] as string[]).includes(letter);
+      }
+      if (qid === "tier") {
+        d.session.tier = letter;
+      }
     });
+  };
+
+  const lockAndProvision = () => {
+    if (!complete) return;
+    const tierVal = (answers.tier ?? "A") as Tier;
+    const habitsVal = answers.habits ?? "";
+    const extraVal = answers.extra ?? "";
+    const codingVal = answers.coding ?? "";
+
+    if (!habitsVal || !extraVal || !codingVal) {
+      toast("Please answer every question before locking intake", "warn");
+      return;
+    }
+
+    const payload: QuestionnairePayload = {
+      ack,
+      answers: {
+        tier: tierVal,
+        habits: habitsVal,
+        extra: extraVal,
+        coding: codingVal,
+      },
+      sandboxEnabled: (["A", "B", "C"] as string[]).includes(codingVal),
+    };
+
+    up(d => {
+      d.questionnaire.ack = payload.ack;
+      d.questionnaire.answers = payload.answers;
+      d.questionnaire.sandboxEnabled = payload.sandboxEnabled;
+      d.session.tier = payload.answers.tier;
+      d.session.stage = "provisioning";
+      d.session.provisionStart = Date.now();
+    });
+
+    toast("Intake locked — provisioning started", "info");
+    navigate("/provisioning");
   };
 
   return (
@@ -67,7 +109,7 @@ export function QuestionnaireView() {
                     return (
                       <button key={letter} type="button" disabled={!ack} aria-pressed={selected}
                         className={cn("letter-opt", selected && "selected", oi === 4 && "sm:col-span-2")}
-                        onClick={() => pick(q.id, letter)}>
+                        onClick={() => pick(q.id, letter as Tier)}>
                         <span className="letter-key">{letter}</span>
                         <span className="pt-1 font-medium">{opt}</span>
                       </button>
@@ -85,12 +127,7 @@ export function QuestionnaireView() {
 
           <div className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t-2 border-dashed pt-6" style={{ borderColor: "var(--background-300)" }}>
             <p className="font-mono text-xs" style={{ color: "var(--text-500)" }}>scale: {QUESTIONS.map(q => answers[q.id] ?? "·").join(" · ")}</p>
-            <button className="btn btn-primary" disabled={!complete}
-              onClick={() => {
-                up(d => { d.session.stage = "provisioning"; d.session.provisionStart = Date.now(); });
-                toast("Intake locked — provisioning started", "info");
-                navigate("/provisioning");
-              }}>
+            <button className="btn btn-primary" disabled={!complete} onClick={lockAndProvision}>
               Lock answers & provision <ArrowRight size={16} />
             </button>
           </div>

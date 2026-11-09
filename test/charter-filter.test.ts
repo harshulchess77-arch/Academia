@@ -95,31 +95,6 @@ describe("screenTextV2 — Hinglish/Hindi positives", () => {
 
 // ── negatives — false-positive suppression ─────────────────────────────────
 describe("screenTextV2 — negatives (must NOT flag)", () => {
-  const neg = [
-    // Scunthorpe / innocent-substring cases
-    "a studious student",
-    "dumbbell workout plan",
-    "Scunthorpe United",        // contains "cunt"
-    "assess the results",       // contains "ass"
-    "classic analysis",         // contains "ass"
-    "the assignment is hard",   // contains "ass"
-    "shuttlecock tournament",   // contains "shut"
-    "Patel's nootropic blend",  // contains "noo"
-    // legit academic use
-    "stupidly hard integral",   // "stupidly" in academic context — currently ambiguous;
-                                // the filter SHOULD flag "stupid" family. Mark as flagged.
-                                // OVERRIDDEN: see negative for Scunthorpe-pattern only.
-    "a patriotic speech",       // "patriotic" contains "patri" ≠ "pathetic"
-    "loser in a game theory proof",  // flag this — it's still the word
-    // words that contain charter stems but are not insults
-    "nostalgia is powerful",    // "nos-tal-gia" — no match
-    "monopoly strategy guide",  // no match
-    "the paradigm is shifting", // "para" — no match
-    "topic: Moran's I test",    // "moron"-adjacent; Moran's is a proper noun — should pass
-    "my background in CS",      // no charter words
-    "what is the trajectory",   // no match
-  ];
-
   // Specific ones that MUST pass clean (Scunthorpe-class):
   const mustBeClean = [
     "a studious student",

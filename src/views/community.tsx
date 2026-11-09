@@ -119,45 +119,55 @@ export function CommunityView() {
 
           {/* feed */}
           <div className="space-y-4">
-            {s.community.map(t => (
-              <article key={t.id} className="sheet p-5">
-                <div className="flex items-start gap-3">
-                  <Avatar name={t.author} hue={t.hue} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold" style={{ color: "var(--text-500)" }}>{t.author} · {ago(t.ts)} · <span style={{ color: "var(--cobalt-600)" }}>{t.tag}</span></p>
-                    <h3 className="mt-0.5 font-display text-lg font-bold leading-snug">{t.title}</h3>
-                    <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--text-700)" }}>{t.body}</p>
-                  </div>
-                </div>
-                {t.replies.length > 0 && (
-                  <ul className="mt-4 space-y-3 border-l-2 pl-4" style={{ borderColor: "var(--background-300)" }}>
-                    {t.replies.map(r => (
-                      <li key={r.id} className="flex items-start gap-2.5">
-                        <Avatar name={r.author} hue={r.author.length * 37 % 360} size={26} />
-                        <div>
-                          <p className="text-[11px] font-semibold" style={{ color: "var(--text-500)" }}>{r.author} · {ago(r.ts)}</p>
-                          <p className="text-sm leading-relaxed">{r.body}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-3">
-                  {replyFor === t.id ? (
-                    <div>
-                      <textarea className={cn("input min-h-[70px]", replyResult.hits.length > 0 && "input-flagged")} aria-label="Reply text" placeholder="Reply with working, not verdicts…" value={reply} onChange={e => setReply(e.target.value)} autoFocus />
-                      <KeystrokeBanner result={replyResult} />
-                      <div className="mt-2 flex gap-2">
-                        <button className="btn btn-primary btn-sm" disabled={replyResult.overall === "block" || !reply.trim()} onClick={() => sendReply(t.id)}>Reply</button>
-                        <button className="btn btn-sm" onClick={() => { setReplyFor(null); setReply(""); }}>Cancel</button>
-                      </div>
+            {s.community.length === 0 ? (
+              <div className="sheet p-10 text-center">
+                <MessageSquare size={36} className="mx-auto" style={{ color: "var(--text-400)" }} />
+                <h3 className="mt-3 font-display text-xl font-bold">No questions posted yet</h3>
+                <p className="mt-1.5 text-sm" style={{ color: "var(--text-500)" }}>
+                  The Q&A feed is live and verified by the real-time keystroke charter filter. Post the first question to begin a discussion.
+                </p>
+              </div>
+            ) : (
+              s.community.map(t => (
+                <article key={t.id} className="sheet p-5">
+                  <div className="flex items-start gap-3">
+                    <Avatar name={t.author} hue={t.hue} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold" style={{ color: "var(--text-500)" }}>{t.author} · {ago(t.ts)} · <span style={{ color: "var(--cobalt-600)" }}>{t.tag}</span></p>
+                      <h3 className="mt-0.5 font-display text-lg font-bold leading-snug">{t.title}</h3>
+                      <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--text-700)" }}>{t.body}</p>
                     </div>
-                  ) : (
-                    <button className="btn btn-sm" onClick={() => { setReplyFor(t.id); setReply(""); }}><MessageSquare size={14} /> Reply · {t.replies.length}</button>
+                  </div>
+                  {t.replies.length > 0 && (
+                    <ul className="mt-4 space-y-3 border-l-2 pl-4" style={{ borderColor: "var(--background-300)" }}>
+                      {t.replies.map(r => (
+                        <li key={r.id} className="flex items-start gap-2.5">
+                          <Avatar name={r.author} hue={r.author.length * 37 % 360} size={26} />
+                          <div>
+                            <p className="text-[11px] font-semibold" style={{ color: "var(--text-500)" }}>{r.author} · {ago(r.ts)}</p>
+                            <p className="text-sm leading-relaxed">{r.body}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                </div>
-              </article>
-            ))}
+                  <div className="mt-3">
+                    {replyFor === t.id ? (
+                      <div>
+                        <textarea className={cn("input min-h-[70px]", replyResult.hits.length > 0 && "input-flagged")} aria-label="Reply text" placeholder="Reply with working, not verdicts…" value={reply} onChange={e => setReply(e.target.value)} autoFocus />
+                        <KeystrokeBanner result={replyResult} />
+                        <div className="mt-2 flex gap-2">
+                          <button className="btn btn-primary btn-sm" disabled={replyResult.overall === "block" || !reply.trim()} onClick={() => sendReply(t.id)}>Reply</button>
+                          <button className="btn btn-sm" onClick={() => { setReplyFor(null); setReply(""); }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button className="btn btn-sm" onClick={() => { setReplyFor(t.id); setReply(""); }}><MessageSquare size={14} /> Reply · {t.replies.length}</button>
+                    )}
+                  </div>
+                </article>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -165,7 +175,7 @@ export function CommunityView() {
       {tab === "Study room" && (
         <div>
           <div className="mb-4 flex flex-wrap items-center gap-3">
-            <Pill tone="forest"><Users size={13} /> Room #3 · KCL problem set</Pill>
+            <Pill tone="forest"><Users size={13} /> Study Room · Collaborative</Pill>
             <Pill tone="cobalt">CRDT sheet · live merge</Pill>
             <button className={`btn btn-sm ml-auto ${inRoom ? "btn-warn" : ""}`} aria-pressed={inRoom}
               onClick={() => { up(d => { d.room.hands = inRoom ? d.room.hands.filter(h => h !== me) : [...d.room.hands, me]; }); toast(inRoom ? "Hand lowered" : "Hand raised — the room can see you", "info"); }}>
@@ -179,6 +189,7 @@ export function CommunityView() {
               <textarea
                 className="min-h-[300px] flex-1 resize-none bg-transparent font-mono text-[13.5px] leading-7 outline-none"
                 aria-label="Shared study room notes"
+                placeholder="Write notes, formulas, or working here... changes synchronize across room peers."
                 value={s.room.notes}
                 onChange={e => up(d => { d.room.notes = e.target.value; })}
               />
@@ -197,7 +208,17 @@ export function CommunityView() {
               <div className="sheet p-5">
                 <SectionHead title="In the room" />
                 <ul className="space-y-2.5">
-                  {[{ n: "Rohan Kulkarni", h: 130, hand: true }, { n: "Meera Pillai", h: 20, hand: false }, { n: me, h: 25, hand: inRoom }].map(m => (
+                  {[
+                    { n: me, h: (me.length * 37) % 360, hand: inRoom },
+                    ...s.admin.students
+                      .filter(st => st.name.toLowerCase() !== me.toLowerCase())
+                      .slice(0, 4)
+                      .map(st => ({
+                        n: st.name,
+                        h: (st.name.length * 43) % 360,
+                        hand: s.room.hands.includes(st.name),
+                      })),
+                  ].map(m => (
                     <li key={m.n} className="flex items-center gap-3">
                       <Avatar name={m.n} hue={m.h} size={32} />
                       <span className="flex-1 text-sm font-semibold">{m.n}</span>

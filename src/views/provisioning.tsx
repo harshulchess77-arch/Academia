@@ -1,5 +1,6 @@
-/* Academia · Phase 1.4 — account provisioning: SLA countdown + stage roadmap */
-import { useEffect, useState } from "react";
+/* Academia · Phase 1.4 — account provisioning: SLA countdown + dynamic stage roadmap.
+   Dynamically binds provisioning sequences to the authenticated user's actual profile and state. */
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, KeyRound, Library, Target } from "lucide-react";
 import { useApp } from "@/engine/store";
 import { navigate } from "@/engine/router";
@@ -9,16 +10,6 @@ const STAGES = [
   { label: "Indexing Library", icon: <Library size={18} />, at: 0, done: 3 },
   { label: "Matching Opportunities", icon: <Target size={18} />, at: 3, done: 6.5 },
   { label: "Encrypting Vault Keypair", icon: <KeyRound size={18} />, at: 6.5, done: 9 },
-];
-const LOGS = [
-  [0.4, "mounting local notebook volume… ok"],
-  [1.2, "indexing 8 flashcards · 4 notes · SM-2 state restored"],
-  [2.6, "library index sealed (checksum 9f31)"],
-  [3.6, "tier scale read: calibrating opportunity ladder"],
-  [5.2, "6 opportunities matched · 3 tracked"],
-  [6.8, "generating vault keypair (x25519, local only)…"],
-  [8.4, "keypair sealed → aarav.academia-lock"],
-  [9.0, "provisioning READY — access token issued"],
 ];
 
 function fmtClock(sec: number): string {
@@ -39,6 +30,22 @@ export function ProvisioningView() {
   const ready = elapsed >= 9;
   const sla = Math.max(0, 3600 - elapsed);
   const pct = Math.min(100, (elapsed / 9) * 100);
+
+  const userSlug = useMemo(() => {
+    const raw = s.session.name.trim().toLowerCase().replace(/[^a-z0-9]/g, "_");
+    return raw || "student";
+  }, [s.session.name]);
+
+  const dynamicLogs: [number, string][] = useMemo(() => [
+    [0.4, "mounting local notebook volume… ok"],
+    [1.2, `indexing ${s.flashcards.length} flashcard(s) · ${s.notes.length} note(s) · SM-2 state calibrated`],
+    [2.6, `library index sealed (tier ${s.session.tier})`],
+    [3.6, `academic standing Tier ${s.session.tier} applied: calibrating opportunity ladder`],
+    [5.2, `${s.inventory.length} opportunities indexed · ${s.inventory.filter(o => o.tracked).length} tracked`],
+    [6.8, "generating vault keypair (AES-256-GCM / WebCrypto, local only)…"],
+    [8.4, `keypair sealed → ${userSlug}.academia-lock`],
+    [9.0, `provisioning READY — deterministic desk online for ${s.session.name || "student"}`],
+  ], [s.flashcards.length, s.notes.length, s.session.tier, s.inventory.length, userSlug, s.session.name]);
 
   return (
     <div className="grid min-h-screen place-items-center p-4">
@@ -85,9 +92,9 @@ export function ProvisioningView() {
 
         {/* provisioning log */}
         <div className="code-area mt-7 max-h-40 overflow-y-auto p-4" aria-live="polite">
-          {LOGS.filter(([t]) => elapsed >= (t as number)).map(([t, line], i) => (
-            <p key={i} className="terminal-line" style={{ color: String(line).includes("READY") ? "var(--marigold-500)" : "#cfc6ae" }}>
-              <span style={{ color: "#7a715c" }}>[{(t as number).toFixed(1)}s]</span> {line as string}
+          {dynamicLogs.filter(([t]) => elapsed >= t).map(([t, line], i) => (
+            <p key={i} className="terminal-line" style={{ color: line.includes("READY") ? "var(--marigold-500)" : "#cfc6ae" }}>
+              <span style={{ color: "#7a715c" }}>[{t.toFixed(1)}s]</span> {line}
             </p>
           ))}
           {!ready && <p className="terminal-line blink-cursor" style={{ color: "#7a715c" }} />}

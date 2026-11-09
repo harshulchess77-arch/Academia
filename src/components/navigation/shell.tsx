@@ -3,10 +3,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   BookOpen, Calculator, CircuitBoard, Flag, Folder, HeartPulse, Home, LayoutGrid, Lock,
   LogOut, Megaphone, Menu, MessageSquareText, Moon, Network, NotebookPen, PanelLeft,
-  PenLine, PlaySquare, Shield, Sigma, SquareTerminal, Sun, Target, Timer, Users, UsersRound, Workflow, Wrench, X,
+  PenLine, PlaySquare, Presentation, Shield, Sigma, SquareTerminal, Sun, Target, Timer, Users, UsersRound, Workflow, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
-import { useApp, DEMO_MODE } from "@/engine/store";
+import { useApp, verifyAdminClaims } from "@/engine/store";
 import { navigate } from "@/engine/router";
 import { QuotaPills } from "@/components/ui";
 import { AssistantDrawer } from "@/components/chatbot/assistant";
@@ -16,6 +16,7 @@ export interface ModuleDef { path: string; label: string; icon: ReactNode; group
 export const MODULES: ModuleDef[] = [
   { path: "/dashboard", label: "Dashboard", icon: <Home size={19} />, group: "Learn" },
   { path: "/library", label: "Library", icon: <BookOpen size={19} />, group: "Learn" },
+  { path: "/tutor", label: "AI Tutor", icon: <Presentation size={19} />, group: "Learn" },
   { path: "/media", label: "Media", icon: <PlaySquare size={19} />, group: "Learn" },
   { path: "/atlas", label: "Knowledge Atlas", icon: <Network size={19} />, group: "Learn" },
   { path: "/sandbox", label: "Sandbox", icon: <SquareTerminal size={19} />, group: "Build", badge: "sandbox" },
@@ -42,7 +43,7 @@ const GROUPS = [
 ] as const;
 
 export function Shell({ path, children }: { path: string; children: ReactNode }) {
-  const { s, up, toast } = useApp();
+  const { s, up } = useApp();
   const [indexOpen, setIndexOpen] = useState(true);
   const [mobileIndex, setMobileIndex] = useState(false);
   const [group, setGroup] = useState<string | null>(null);
@@ -50,7 +51,7 @@ export function Shell({ path, children }: { path: string; children: ReactNode })
   const [userMenu, setUserMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const unread = s.announcements.filter(a => !a.read).length;
-  const isAdmin = s.session.role === "admin";
+  const isAdmin = verifyAdminClaims(s.session);
   const active = MODULES.find(m => m.path === path);
 
   useEffect(() => {
@@ -177,16 +178,14 @@ export function Shell({ path, children }: { path: string; children: ReactNode })
                     <p className="text-xs" style={{ color: "var(--text-500)" }}>{s.session.email}</p>
                     <span className="pill mt-1.5 !text-[10px]" style={{ background: "var(--forest-100)", borderColor: "var(--forest-500)", color: "var(--forest-700)" }}>{s.session.status} · Tier {s.session.tier}</span>
                   </div>
-                  {DEMO_MODE && (
+                  {isAdmin && (
                     <button role="menuitem" className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--background-200)]"
+                      style={{ color: "var(--accent-600)" }}
                       onClick={() => {
-                        const toAdmin = !isAdmin;
-                        up(d => { d.session.role = toAdmin ? "admin" : "student"; });
                         setUserMenu(false);
-                        toast(toAdmin ? "Governance mode enabled" : "Returned to student workspace", "info");
-                        navigate(toAdmin ? "/admin/dashboard" : "/dashboard");
+                        navigate("/admin/console");
                       }}>
-                      <Shield size={16} /> {isAdmin ? "Student workspace" : "Governance mode"}
+                      <Shield size={16} /> Admin Console
                     </button>
                   )}
                   <button role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--background-200)] md:hidden"
@@ -195,7 +194,16 @@ export function Shell({ path, children }: { path: string; children: ReactNode })
                   </button>
                   <button role="menuitem" className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-[var(--background-200)]"
                     style={{ color: "var(--accent-600)" }}
-                    onClick={() => { up(d => { d.session.authed = false; d.session.role = "student"; }); setUserMenu(false); navigate("/"); }}>
+                    onClick={() => {
+                      up(d => {
+                        d.session.authed = false;
+                        d.session.role = "student";
+                        d.session.tokenClaims = undefined;
+                        d.session.accessToken = undefined;
+                      });
+                      setUserMenu(false);
+                      navigate("/");
+                    }}>
                     <LogOut size={16} /> Sign out
                   </button>
                 </div>

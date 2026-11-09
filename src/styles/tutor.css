@@ -1,0 +1,7 @@
+/* Academia · AI Whiteboard Tutor — only what the existing skin doesn't already provide */
+.tutor-board { width: 100%; height: auto; display: block; background: var(--background-50); border-radius: 12px; }
+.tutor-board .tutor-new { animation: fadeIn .55s var(--ease-out, ease-out) both; animation-delay: calc(var(--i, 0) * 120ms); }
+.tutor-board .board-text { font-family: var(--font-hand, "Caveat", cursive); }
+.tutor-board .board-mono { font-family: var(--font-mono, "IBM Plex Mono", monospace); }
+.tutor-chip { display: inline-flex; align-items: center; gap: .35rem; border: 1.5px dashed var(--ink-border); border-radius: 999px; padding: .15rem .65rem; font-size: .75rem; font-weight: 700; background: var(--background-100); }
+@media (prefers-reduced-motion: reduce) { .tutor-board .tutor-new { animation: none; } }

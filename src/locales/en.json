@@ -47,6 +47,25 @@
     "refresh": "Refresh",
     "actions": "Actions"
   },
+  "dashboard": {
+    "title": "Today's desk",
+    "goodMorning": "good morning",
+    "goodAfternoon": "good afternoon",
+    "goodEvening": "good evening",
+    "quotas": "Quotas",
+    "cardsDue": "cards due",
+    "upcomingDeadlines": "Upcoming Inventory deadlines",
+    "noDeadlines": "No deadlines tracked. Open Inventory to calibrate milestones.",
+    "unreadAnnouncements": "Unread announcements",
+    "allAnnouncementsRead": "nothing unread — margins clean",
+    "focusTotals": "Focus totals",
+    "minToday": "min today",
+    "minThisWeek": "min this week",
+    "reviewCards": "Review cards",
+    "runSandbox": "Run sandbox",
+    "newProposal": "New proposal",
+    "trackDeadline": "Track deadline"
+  },
   "library": {
     "title": "Active-Recall Library",
     "subtitle": "Canonical SuperMemo SM-2 algorithm with zero memory decay leaks",
@@ -107,6 +126,46 @@
     "iterations": "PBKDF2 Iterations",
     "wireFormat": "Container Format: .academia-lock (ACA-LOCK header)"
   },
+  "pomodoro": {
+    "title": "Pomodoro Focus Sessions",
+    "subtitle": "Fixed intervals, a soft chime, and a heatmap that records — never nags. There are no streaks to lose here.",
+    "kicker": "attention is the syllabus",
+    "focus": "Focus",
+    "break": "Break",
+    "chimeOn": "Chime on",
+    "chimeOff": "Chime off",
+    "taglineFocus": "deep work",
+    "taglineBreak": "breathe & stretch",
+    "start": "Start",
+    "pause": "Pause",
+    "reset": "Reset",
+    "presets": "Presets",
+    "presetClassic": "Classic (25/5)",
+    "presetDeep": "Deep Work (50/10)",
+    "presetSprint": "Sprint (15/3)",
+    "focusLength": "Focus length · {min} min",
+    "breakLength": "Break length · {min} min",
+    "linkedSubject": "Linked subject or note",
+    "generalFocus": "General focus (no link)",
+    "studyHeatmap": "Study heatmap",
+    "lifetime": "{hours}h lifetime",
+    "activeDaysSummary": "{days} active days · no streak counter on purpose",
+    "zeroRecorded": "0 min recorded",
+    "emptyNotice": "No focus sessions recorded yet. Start a timer or quick-log below to begin your record.",
+    "whyNoStreaksTitle": "Why no streaks?",
+    "whyNoStreaksBody": "Streak counters convert studying into loss-aversion. This heatmap is a record, not a score — empty squares carry no penalty, and nothing here sends notifications.",
+    "quickLogTitle": "Quick log",
+    "quickLogDesc": "Studied away from the desk? Log it honestly.",
+    "quickLogPlus": "+{min} min",
+    "resetToday": "Reset today",
+    "resetTodayConfirm": "Reset today's logged focus time to 0 minutes?",
+    "resetTodayToast": "Today's focus minutes reset to 0",
+    "logToast": "+{min} min logged for today",
+    "focusCompleteToast": "+{min} min logged — take your break",
+    "breakCompleteToast": "Break over — the desk is yours again",
+    "less": "less",
+    "more": "more"
+  },
   "tally": {
     "title": "GPA Matrix & Predictive Milestone Forecaster",
     "subtitle": "Credit-weighted collegiate calculation with tier bump adjustments and score projections",
@@ -123,7 +182,33 @@
     "currentScore": "Current Score (%)",
     "targetScore": "Target Score (%)",
     "milestoneProjection": "Score Target Advice",
-    "requiredAverage": "Required remaining assignment average"
+    "requiredAverage": "Required remaining assignment average",
+    "noCourses": "No courses recorded yet. Add courses to calibrate your GPA matrix."
+  },
+  "adoro": {
+    "title": "Adoro report card",
+    "kicker": "diagnosis before drills",
+    "subtitle": "Fixed-threshold diagnostics: below 70 is a weakness, 65/80 are the readiness bands. Recommendations link to verified notes.",
+    "compositeReadiness": "Composite readiness",
+    "weaknessMap": "Weakness map",
+    "subjectGauges": "Subject gauges",
+    "recommendations": "Rule-generated recommendations",
+    "noDiagnostics": "No diagnostic assessments logged yet. Run an assessment to calibrate your weakness map.",
+    "bands": {
+      "applicationReady": "APPLICATION READY",
+      "consolidating": "CONSOLIDATING",
+      "foundation": "FOUNDATION",
+      "notEvaluated": "NOT EVALUATED"
+    }
+  },
+  "inventory": {
+    "title": "Inventory",
+    "kicker": "deadlines are load-bearing",
+    "subtitle": "Every opportunity you track feeds the milestone predictor — a fixed benchmark ladder calibrated to your target admit profile.",
+    "targetProfile": "Target profile",
+    "milestoneLadder": "Milestone ladder",
+    "gapQueue": "Gap queue (fixed thresholds)",
+    "noOpportunities": "No opportunities tracked yet. Add academic opportunities to activate your ladder."
   },
   "charter": {
     "title": "Community Charter & Text Moderation",
@@ -144,10 +229,47 @@
     "parentalConsent": "Verifiable Parental Consent (VPC) single-use token lifecycle active",
     "zeroTelemetry": "Privacy by Construction: Zero external telemetry, tracking pixels, or third-party beacons."
   },
+  "turnstile": {
+    "barrierTitle": "Cloudflare Human Verification Barrier",
+    "verifiedTitle": "Cloudflare Turnstile Verified",
+    "prompt": "Cryptographic human proof required before submission",
+    "passed": "PASSED",
+    "verifyButton": "Verify Human",
+    "verifying": "Verifying...",
+    "error": "Cloudflare Turnstile verification failed. Retry.",
+    "requiredNotice": "Human verification handshake required before submission."
+  },
+  "waf": {
+    "threatBlocked": "HexStrike WAF: Malicious payload intercepted and discarded.",
+    "prototypePollution": "HexStrike WAF: Prototype pollution injection attempt rejected.",
+    "xssAttempt": "HexStrike WAF: Cross-site scripting sequence intercepted.",
+    "sqliAttempt": "HexStrike WAF: SQL injection sequence discarded.",
+    "routeNormalized": "HexStrike WAF: Navigational route sanitized."
+  },
+  "adminConsole": {
+    "title": "Governance Command Console",
+    "realmBadge": "Verified Administrative Realm",
+    "jwtClaim": "JWT: academia_admin",
+    "studentLifecycle": "Student Lifecycle Engine",
+    "consentStream": "Parental Consent Audit Stream",
+    "announcements": "Announcement Composer",
+    "liquidateBtn": "Liquidate Admin Credentials",
+    "exitDesk": "Exit to Student Desk"
+  },
+  "auth": {
+    "welcome": "Welcome to the desk",
+    "openBinder": "open your binder",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "nameLabel": "Full name",
+    "dobLabel": "Date of birth",
+    "termsNotice": "I agree to the deterministic computing charter and confirm that all academic records are locally sovereign.",
+    "createAccount": "Create student account",
+    "signInBtn": "Sign in"
+  },
   "errors": {
     "configBreach": "Configuration Error: Environment invariants breached.",
     "missingBackend": "Configuration Error: Missing verified backend service credentials.",
     "unauthorizedMock": "Configuration Error: Unauthenticated mock data rollback prohibited in production."
   }
 }
-

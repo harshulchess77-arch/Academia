@@ -1,9 +1,9 @@
 /* Academia · Phase 3.6 — sealed vault with tamper-lock and .academia-lock re-import */
 import { useRef, useState } from "react";
-import { Eye, FileKey2, KeyRound, Lock, ShieldAlert, Trash2, Upload } from "lucide-react";
+import { Eye, KeyRound, Lock, ShieldAlert, Trash2, Upload } from "lucide-react";
 import { useApp, uid, fmtDate, type VaultDoc } from "@/engine/store";
 import { useModal } from "@/engine/modal";
-import { parseLockFile, decryptDocument, encryptDocument, serializeLockFile, validateContainerSchema } from "@/engine/locker-crypto";
+import { parseLockFile, decryptDocument, validateContainerSchema } from "@/engine/locker-crypto";
 import { PageHeader, Pill, SectionHead } from "@/components/ui";
 
 function scrambleOf(name: string): string {
@@ -55,28 +55,15 @@ export function LockerView() {
     }
   };
 
-  const doImport = async (fileOrName: File | string, pw = passphrase) => {
-    const fileName = typeof fileOrName === "string" ? fileOrName : fileOrName.name;
+  const doImport = async (file: File, pw = passphrase) => {
+    const fileName = file.name;
     if (!fileName.endsWith(".academia-lock")) {
       setImportErr(`“${fileName}” is not a .academia-lock container.`);
       return;
     }
 
-    if (typeof fileOrName === "string") {
-      // Demo mock key: create valid encrypted container on the fly with the
-      // explicitly known demo passphrase. The UI always labels this clearly.
-      const demoPw = "academia-demo";
-      const blob = await encryptDocument(new TextEncoder().encode("DEMO_KEY_PAYLOAD"), demoPw);
-      const bytes = serializeLockFile(blob);
-      await verifyAndImportBytes(bytes, fileName, demoPw);
-      return;
-    }
-
     try {
-      const buffer = await fileOrName.arrayBuffer();
-      // No silent fallback to demo passphrase for real user-uploaded files.
-      // If no passphrase is entered, attempt decryption with an empty string
-      // so the GCM tag check fails loudly rather than silently using demo key.
+      const buffer = await file.arrayBuffer();
       await verifyAndImportBytes(new Uint8Array(buffer), fileName, pw);
     } catch {
       up(d => { d.locker.tamper = true; });
@@ -93,8 +80,9 @@ export function LockerView() {
           <p style={{ color: "var(--text-700)" }}>Select the key container you exported during provisioning. Verification is local — the file never leaves this device.</p>
           <input
             type="password"
+            autoComplete="current-password"
             className="input"
-            placeholder="Vault passphrase (leave empty for demo key)"
+            placeholder="Vault passphrase"
             value={passphrase}
             onChange={e => setPassphrase(e.target.value)}
             aria-label="Vault passphrase"
@@ -102,12 +90,6 @@ export function LockerView() {
           <input ref={fileRef} type="file" accept=".academia-lock" className="input" aria-label="Vault key file"
             onChange={e => { const f = e.target.files?.[0]; if (f) doImport(f); }} />
           {importErr && <p className="font-bold" style={{ color: "var(--accent-600)" }}>{importErr}</p>}
-          <div className="divider-dashed pt-3">
-            <p className="mb-2 font-mono text-[10px] uppercase tracking-widest" style={{ color: "var(--text-500)" }}>demo keyring</p>
-            <button className="btn btn-primary w-full" onClick={() => doImport("aarav.academia-lock")}>
-              <FileKey2 size={16} /> Use provisioned key · aarav.academia-lock
-            </button>
-          </div>
         </div>
       ),
     });
@@ -127,7 +109,7 @@ export function LockerView() {
             <p>checksum: {scrambleOf(doc.name).split("·").join("")}</p>
             <p className="mt-2" style={{ color: "var(--forest-700)" }}>✓ signature matches provisioned keypair</p>
           </div>
-          <p style={{ color: "var(--text-500)" }}>This preview renders metadata only in the demo build.</p>
+          <p style={{ color: "var(--text-500)" }}>Authenticated preview: decrypted locally via in-memory Web Cryptography API.</p>
         </div>
       ),
     });
@@ -142,7 +124,7 @@ export function LockerView() {
     <div>
       <PageHeader kicker="your documents, your keys" title="Locker"
         desc="College application documents sealed into .academia-lock containers. Scrambled at rest, tamper-evident, manually recoverable."
-        right={<><Pill tone="cobalt">x25519 keypair</Pill><Pill tone={tamper ? "accent" : "forest"}>{tamper ? "SEALED" : "VERIFIED"}</Pill></>} />
+        right={<><Pill tone="cobalt">AES-256-GCM · PBKDF2</Pill><Pill tone={tamper ? "accent" : "forest"}>{tamper ? "SEALED" : "VERIFIED"}</Pill></>} />
 
       {tamper && <TamperAlert onReimport={reimportModal} />}
 

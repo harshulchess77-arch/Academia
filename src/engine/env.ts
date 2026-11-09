@@ -13,6 +13,7 @@ export interface EnvConfig {
   supabaseAnonKey: string;
   cryptoMinPbkdf2Iterations: number;
   complianceJurisdiction: ComplianceJurisdiction;
+  cloudflareTurnstileSiteKey: string;
 }
 
 /** Pure validator that inspects raw environment variables and enforces production invariants. */
@@ -58,6 +59,8 @@ export function validateEnvironment(raw: Record<string, string | undefined>): En
     }
   }
 
+  const cloudflareTurnstileSiteKey = raw.VITE_CLOUDFLARE_TURNSTILE_SITE_KEY?.trim() || "";
+
   return {
     appEnv,
     allowMockFallback,
@@ -65,6 +68,7 @@ export function validateEnvironment(raw: Record<string, string | undefined>): En
     supabaseAnonKey,
     cryptoMinPbkdf2Iterations,
     complianceJurisdiction,
+    cloudflareTurnstileSiteKey,
   };
 }
 
