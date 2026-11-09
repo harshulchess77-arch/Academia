@@ -30,7 +30,7 @@
     "@vitest/coverage-v8": "^4.1.12",
     "jsdom": "^27.4.0",
     "tailwindcss": "4.1.17",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "^7.3.7",
     "vite-plugin-singlefile": "2.3.0",
     "vitest": "^4.1.12"
